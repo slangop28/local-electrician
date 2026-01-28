@@ -1,3 +1,4 @@
+// Last updated: 2026-01-29T05:06:00Z - Fixed TypeScript null type error
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, SHEET_TABS } from '@/lib/google-sheets';
 import { calculateDistance } from '@/lib/geocoding';
