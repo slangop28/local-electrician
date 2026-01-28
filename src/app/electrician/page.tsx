@@ -327,7 +327,7 @@ export default function ElectricianRegistrationPage() {
                                 value={formData.name}
                                 onChange={(e) => updateField('name', e.target.value)}
                                 error={errors.name}
-                                success={touched.name && !errors.name && formData.name.length > 2}
+                                success={!!(touched.name && !errors.name && formData.name.length > 2)}
                             />
 
                             <Input
@@ -336,7 +336,7 @@ export default function ElectricianRegistrationPage() {
                                 value={formData.phonePrimary}
                                 onChange={(e) => updateField('phonePrimary', e.target.value.replace(/\D/g, '').slice(0, 10))}
                                 error={errors.phonePrimary}
-                                success={touched.phonePrimary && validatePhone(formData.phonePrimary)}
+                                success={!!(touched.phonePrimary && validatePhone(formData.phonePrimary))}
                                 helpText="10-digit mobile number"
                             />
 
@@ -346,7 +346,7 @@ export default function ElectricianRegistrationPage() {
                                 value={formData.phoneSecondary}
                                 onChange={(e) => updateField('phoneSecondary', e.target.value.replace(/\D/g, '').slice(0, 10))}
                                 error={errors.phoneSecondary}
-                                success={touched.phoneSecondary && formData.phoneSecondary && validatePhone(formData.phoneSecondary)}
+                                success={!!(touched.phoneSecondary && formData.phoneSecondary && validatePhone(formData.phoneSecondary))}
                             />
 
                             <Input
@@ -389,7 +389,7 @@ export default function ElectricianRegistrationPage() {
                                     value={formData.houseNo}
                                     onChange={(e) => updateField('houseNo', e.target.value)}
                                     error={errors.houseNo}
-                                    success={touched.houseNo && !errors.houseNo && formData.houseNo.length > 0}
+                                    success={!!(touched.houseNo && !errors.houseNo && formData.houseNo.length > 0)}
                                 />
 
                                 <Input
@@ -397,7 +397,7 @@ export default function ElectricianRegistrationPage() {
                                     value={formData.area}
                                     onChange={(e) => updateField('area', e.target.value)}
                                     error={errors.area}
-                                    success={touched.area && !errors.area && formData.area.length > 0}
+                                    success={!!(touched.area && !errors.area && formData.area.length > 0)}
                                 />
                             </div>
 
@@ -407,7 +407,7 @@ export default function ElectricianRegistrationPage() {
                                     value={formData.city}
                                     onChange={(e) => updateField('city', e.target.value)}
                                     error={errors.city}
-                                    success={touched.city && !errors.city && formData.city.length > 0}
+                                    success={!!(touched.city && !errors.city && formData.city.length > 0)}
                                 />
 
                                 <Input
@@ -443,7 +443,7 @@ export default function ElectricianRegistrationPage() {
                                     value={formData.pincode}
                                     onChange={(e) => updateField('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))}
                                     error={errors.pincode}
-                                    success={touched.pincode && validatePincode(formData.pincode)}
+                                    success={!!(touched.pincode && validatePincode(formData.pincode))}
                                 />
                             </div>
                         </div>

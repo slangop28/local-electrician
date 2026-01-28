@@ -4,10 +4,12 @@ import { testDriveConnection } from '@/lib/google-drive';
 import { testGeocodingConnection } from '@/lib/geocoding';
 
 export async function GET() {
-    const results = {
+    // Using 'any' to avoid strict type checking on test results
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: Record<string, any> = {
         sheets: { success: false, message: 'Not tested' },
-        drive: { success: false, message: 'Not tested', link: undefined as string | undefined },
-        geocoding: { success: false, message: 'Not tested', data: undefined as { lat: number; lng: number; formattedAddress: string } | undefined },
+        drive: { success: false, message: 'Not tested' },
+        geocoding: { success: false, message: 'Not tested' },
     };
 
     // Test Google Sheets
@@ -27,7 +29,6 @@ export async function GET() {
         results.drive = {
             success: false,
             message: `Drive error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            link: undefined,
         };
     }
 
@@ -38,7 +39,6 @@ export async function GET() {
         results.geocoding = {
             success: false,
             message: `Geocoding error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            data: undefined,
         };
     }
 
