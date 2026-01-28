@@ -11,7 +11,7 @@ interface Electrician {
     area: string;
     lat: number;
     lng: number;
-    distance?: number;
+    distance: number;
     status: string;
 }
 
@@ -41,43 +41,45 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // Skip header row and map to electrician objects
-        const electricians: Electrician[] = rows.slice(1)
-            .map((row: string[]) => {
-                // Column indices based on sheet structure:
-                // 0: Timestamp, 1: ElectricianID, 2: NameAsPerAadhaar, 3: PhonePrimary,
-                // 10: City, 9: Area, 14: Lat, 15: Lng, 18: Status
-                const electricianLat = parseFloat(row[14] || '0');
-                const electricianLng = parseFloat(row[15] || '0');
-                const status = row[18] || 'PENDING';
+        // Skip header row and process electricians
+        const allElectricians: Electrician[] = [];
 
-                // Only include verified electricians
-                if (status !== ELECTRICIAN_STATUS.VERIFIED) {
-                    return null;
-                }
+        for (const row of rows.slice(1) as string[][]) {
+            // Column indices based on sheet structure:
+            // 0: Timestamp, 1: ElectricianID, 2: NameAsPerAadhaar, 3: PhonePrimary,
+            // 10: City, 9: Area, 14: Lat, 15: Lng, 18: Status
+            const electricianLat = parseFloat(row[14] || '0');
+            const electricianLng = parseFloat(row[15] || '0');
+            const status = row[18] || 'PENDING';
 
-                // Calculate distance
-                const distance = calculateDistance(lat, lng, electricianLat, electricianLng);
+            // Only include verified electricians
+            if (status !== ELECTRICIAN_STATUS.VERIFIED) {
+                continue;
+            }
 
-                // Only include if within radius
-                if (distance > radius) {
-                    return null;
-                }
+            // Calculate distance
+            const distance = calculateDistance(lat, lng, electricianLat, electricianLng);
 
-                return {
-                    id: row[1] || '',
-                    name: row[2] || '',
-                    phone: row[3] || '',
-                    city: row[10] || '',
-                    area: row[9] || '',
-                    lat: electricianLat,
-                    lng: electricianLng,
-                    distance: Math.round(distance * 10) / 10, // Round to 1 decimal
-                    status,
-                };
-            })
-            .filter((e): e is Electrician => e !== null)
-            .sort((a, b) => (a.distance || 0) - (b.distance || 0)); // Sort by distance
+            // Only include if within radius
+            if (distance > radius) {
+                continue;
+            }
+
+            allElectricians.push({
+                id: row[1] || '',
+                name: row[2] || '',
+                phone: row[3] || '',
+                city: row[10] || '',
+                area: row[9] || '',
+                lat: electricianLat,
+                lng: electricianLng,
+                distance: Math.round(distance * 10) / 10,
+                status,
+            });
+        }
+
+        // Sort by distance
+        const electricians = allElectricians.sort((a, b) => a.distance - b.distance);
 
         return NextResponse.json({
             success: true,
