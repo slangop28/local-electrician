@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, SHEET_TABS } from '@/lib/google-sheets';
 import { geocodeAddress } from '@/lib/geocoding';
 import { getTimestamp } from '@/lib/utils';
-import { createElectricianFolder, uploadFile } from '@/lib/google-drive';
+import { uploadKYCDocument } from '@/lib/cloudinary';
 
 export async function POST(request: NextRequest) {
     try {
@@ -49,63 +49,39 @@ export async function POST(request: NextRequest) {
         let aadhaarBackURL = '';
         let panFrontURL = '';
 
-        // Upload files to Google Drive if present
-        if (aadhaarFrontFile || aadhaarBackFile || panFrontFile) {
-            try {
-                // Create folder for this electrician
-                const folder = await createElectricianFolder(electricianId);
-                const folderId = folder.id!;
-
-                // Upload Aadhaar Front
-                if (aadhaarFrontFile && aadhaarFrontFile.size > 0) {
-                    const buffer = Buffer.from(await aadhaarFrontFile.arrayBuffer());
-                    const result = await uploadFile(
-                        `aadhaar_front_${electricianId}.${aadhaarFrontFile.name.split('.').pop()}`,
-                        buffer,
-                        aadhaarFrontFile.type || 'image/jpeg',
-                        folderId
-                    );
-                    aadhaarFrontURL = result.webViewLink || '';
-                }
-
-                // Upload Aadhaar Back
-                if (aadhaarBackFile && aadhaarBackFile.size > 0) {
-                    const buffer = Buffer.from(await aadhaarBackFile.arrayBuffer());
-                    const result = await uploadFile(
-                        `aadhaar_back_${electricianId}.${aadhaarBackFile.name.split('.').pop()}`,
-                        buffer,
-                        aadhaarBackFile.type || 'image/jpeg',
-                        folderId
-                    );
-                    aadhaarBackURL = result.webViewLink || '';
-                }
-
-                // Upload PAN
-                if (panFrontFile && panFrontFile.size > 0) {
-                    const buffer = Buffer.from(await panFrontFile.arrayBuffer());
-                    const result = await uploadFile(
-                        `pan_${electricianId}.${panFrontFile.name.split('.').pop()}`,
-                        buffer,
-                        panFrontFile.type || 'image/jpeg',
-                        folderId
-                    );
-                    panFrontURL = result.webViewLink || '';
-                }
-
-                console.log('KYC files uploaded successfully for:', electricianId);
-            } catch (uploadError) {
-                console.error('File upload error:', uploadError);
-                // Continue with registration even if upload fails
-                aadhaarFrontURL = aadhaarFrontFile ? `upload_failed_${aadhaarFrontFile.name}` : '';
-                aadhaarBackURL = aadhaarBackFile ? `upload_failed_${aadhaarBackFile.name}` : '';
-                panFrontURL = panFrontFile ? `upload_failed_${panFrontFile.name}` : '';
+        // Upload files to Cloudinary
+        try {
+            // Upload Aadhaar Front
+            if (aadhaarFrontFile && aadhaarFrontFile.size > 0) {
+                const buffer = Buffer.from(await aadhaarFrontFile.arrayBuffer());
+                aadhaarFrontURL = await uploadKYCDocument(buffer, 'aadhaar_front', electricianId);
+                console.log('Aadhaar front uploaded:', aadhaarFrontURL);
             }
+
+            // Upload Aadhaar Back
+            if (aadhaarBackFile && aadhaarBackFile.size > 0) {
+                const buffer = Buffer.from(await aadhaarBackFile.arrayBuffer());
+                aadhaarBackURL = await uploadKYCDocument(buffer, 'aadhaar_back', electricianId);
+                console.log('Aadhaar back uploaded:', aadhaarBackURL);
+            }
+
+            // Upload PAN
+            if (panFrontFile && panFrontFile.size > 0) {
+                const buffer = Buffer.from(await panFrontFile.arrayBuffer());
+                panFrontURL = await uploadKYCDocument(buffer, 'pan', electricianId);
+                console.log('PAN uploaded:', panFrontURL);
+            }
+
+        } catch (uploadError) {
+            console.error('File upload error:', uploadError);
+            // Store error message but continue with registration
+            const errorMsg = uploadError instanceof Error ? uploadError.message : 'Upload failed';
+            if (aadhaarFrontFile && !aadhaarFrontURL) aadhaarFrontURL = `UPLOAD_ERROR: ${errorMsg}`;
+            if (aadhaarBackFile && !aadhaarBackURL) aadhaarBackURL = `UPLOAD_ERROR: ${errorMsg}`;
+            if (panFrontFile && !panFrontURL) panFrontURL = `UPLOAD_ERROR: ${errorMsg}`;
         }
 
-        // Prepare row data matching the sheet columns:
-        // Timestamp, ElectricianID, NameAsPerAadhaar, PhonePrimary, PhoneSecondary, 
-        // AadhaarFrontURL, AadhaarBackURL, PanFrontURL, HouseNo, Area, City, District, 
-        // State, Pincode, Lat, Lng, ReferralCode, ReferredBy, Status, TotalReferrals, WalletBalance
+        // Prepare row data matching the sheet columns
         const rowData = [
             getTimestamp(),           // Timestamp
             electricianId,            // ElectricianID

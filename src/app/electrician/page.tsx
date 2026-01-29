@@ -150,31 +150,49 @@ export default function ElectricianRegistrationPage() {
     };
 
     // Get location
+    const [isGettingLocation, setIsGettingLocation] = useState(false);
+
     const handleGetLocation = () => {
         if ('geolocation' in navigator) {
+            setIsGettingLocation(true);
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
-                    updateField('lat', position.coords.latitude);
-                    updateField('lng', position.coords.longitude);
+                    const { latitude, longitude } = position.coords;
+                    updateField('lat', latitude);
+                    updateField('lng', longitude);
 
                     // Reverse geocode to get address
                     try {
                         const response = await fetch(
-                            `/api/geocode?lat=${position.coords.latitude}&lng=${position.coords.longitude}`
+                            `/api/reverse-geocode?lat=${latitude}&lng=${longitude}`
                         );
                         const data = await response.json();
-                        if (data.address) {
-                            // Auto-fill address fields if available
+
+                        if (data.success && data.address) {
+                            const addr = data.address;
+
+                            // Auto-fill address fields
+                            if (addr.area) updateField('area', addr.area);
+                            if (addr.city) updateField('city', addr.city);
+                            if (addr.district) updateField('district', addr.district);
+                            if (addr.state) updateField('state', addr.state);
+                            if (addr.pincode) updateField('pincode', addr.pincode);
                         }
                     } catch (error) {
                         console.log('Could not reverse geocode', error);
+                    } finally {
+                        setIsGettingLocation(false);
                     }
                 },
                 (error) => {
                     console.log('Location error:', error);
+                    setIsGettingLocation(false);
                     alert('Could not get location. Please enter address manually.');
-                }
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
             );
+        } else {
+            alert('Geolocation is not supported by your browser.');
         }
     };
 
@@ -371,10 +389,12 @@ export default function ElectricianRegistrationPage() {
                                 variant="outline"
                                 fullWidth
                                 onClick={handleGetLocation}
+                                loading={isGettingLocation}
+                                disabled={isGettingLocation}
                                 className="mb-2"
                             >
                                 <span className="mr-2">📍</span>
-                                Auto-detect My Location
+                                {isGettingLocation ? 'Detecting Location...' : 'Auto-detect My Location'}
                             </Button>
 
                             {formData.lat && formData.lng && (

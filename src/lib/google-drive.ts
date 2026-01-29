@@ -20,56 +20,70 @@ export function getDriveClient() {
     return google.drive({ version: 'v3', auth });
 }
 
-// Create a folder in Google Drive
-export async function createFolder(folderName: string, parentFolderId?: string) {
+// Find or create a folder in the shared drive folder
+async function getOrCreateFolder(folderName: string, parentFolderId: string): Promise<string> {
     const drive = getDriveClient();
 
-    const fileMetadata = {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: parentFolderId ? [parentFolderId] : undefined,
-    };
+    // Search for existing folder
+    const search = await drive.files.list({
+        q: `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'files(id, name)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+    });
 
+    if (search.data.files && search.data.files.length > 0) {
+        return search.data.files[0].id!;
+    }
+
+    // Create new folder
     const response = await drive.files.create({
-        requestBody: fileMetadata,
-        fields: 'id, name, webViewLink',
+        requestBody: {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentFolderId],
+        },
+        fields: 'id',
         supportsAllDrives: true,
     });
 
-    return response.data;
+    return response.data.id!;
 }
 
-// Upload a file to Google Drive
-// NOTE: This requires the user to upload files via client-side OAuth
-// Service accounts don't have storage quota for personal Drive
-export async function uploadFile(
+// Upload a file to Google Drive (to a shared folder)
+export async function uploadKYCFile(
     fileName: string,
     fileBuffer: Buffer,
     mimeType: string,
-    folderId: string
-) {
+    electricianId: string
+): Promise<{ id: string; webViewLink: string }> {
     const drive = getDriveClient();
+    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
 
-    const fileMetadata = {
-        name: fileName,
-        parents: [folderId],
-    };
+    // Create folder structure: KYC > Electricians > {electricianId}
+    const kycFolderId = await getOrCreateFolder('KYC', rootFolderId);
+    const electriciansFolderId = await getOrCreateFolder('Electricians', kycFolderId);
+    const electricianFolderId = await getOrCreateFolder(electricianId, electriciansFolderId);
 
-    const media = {
-        mimeType,
-        body: Readable.from(fileBuffer),
-    };
-
+    // Upload file to the electrician's folder
     const response = await drive.files.create({
-        requestBody: fileMetadata,
-        media,
-        fields: 'id, name, webViewLink, webContentLink',
+        requestBody: {
+            name: fileName,
+            parents: [electricianFolderId],
+        },
+        media: {
+            mimeType,
+            body: Readable.from(fileBuffer),
+        },
+        fields: 'id, webViewLink',
         supportsAllDrives: true,
     });
 
+    const fileId = response.data.id!;
+
     // Make the file publicly viewable
     await drive.permissions.create({
-        fileId: response.data.id!,
+        fileId,
         requestBody: {
             role: 'reader',
             type: 'anyone',
@@ -78,19 +92,17 @@ export async function uploadFile(
     });
 
     return {
-        id: response.data.id,
-        name: response.data.name,
-        webViewLink: response.data.webViewLink,
-        webContentLink: response.data.webContentLink,
+        id: fileId,
+        webViewLink: response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
     };
 }
 
-// List files in a folder (this works with service accounts)
+// List files in a folder
 export async function listFilesInFolder(folderId: string) {
     const drive = getDriveClient();
 
     const response = await drive.files.list({
-        q: `'${folderId}' in parents`,
+        q: `'${folderId}' in parents and trashed=false`,
         fields: 'files(id, name, mimeType, webViewLink)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
@@ -99,59 +111,10 @@ export async function listFilesInFolder(folderId: string) {
     return response.data.files || [];
 }
 
-// Create folder structure for electrician KYC
-export async function createElectricianFolder(electricianId: string) {
-    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
-
-    const drive = getDriveClient();
-
-    // Search for existing KYC folder
-    const kycSearch = await drive.files.list({
-        q: `name='KYC' and '${rootFolderId}' in parents and mimeType='application/vnd.google-apps.folder'`,
-        fields: 'files(id, name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-    });
-
-    let kycFolderId: string;
-
-    if (kycSearch.data.files && kycSearch.data.files.length > 0) {
-        kycFolderId = kycSearch.data.files[0].id!;
-    } else {
-        const kycFolder = await createFolder('KYC', rootFolderId);
-        kycFolderId = kycFolder.id!;
-    }
-
-    // Search for existing Electricians folder
-    const electriciansSearch = await drive.files.list({
-        q: `name='Electricians' and '${kycFolderId}' in parents and mimeType='application/vnd.google-apps.folder'`,
-        fields: 'files(id, name)',
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-    });
-
-    let electriciansFolderId: string;
-
-    if (electriciansSearch.data.files && electriciansSearch.data.files.length > 0) {
-        electriciansFolderId = electriciansSearch.data.files[0].id!;
-    } else {
-        const electriciansFolder = await createFolder('Electricians', kycFolderId);
-        electriciansFolderId = electriciansFolder.id!;
-    }
-
-    // Create folder for this specific electrician
-    const electricianFolder = await createFolder(electricianId, electriciansFolderId);
-
-    return electricianFolder;
-}
-
-// Test connection by listing files in the shared folder
-// Note: File upload won't work with service accounts on personal Drive (no storage quota)
-// We test read access instead, upload will be handled via client-side OAuth
+// Test connection by listing files
 export async function testDriveConnection(): Promise<{ success: boolean; message: string; files?: string[] }> {
     try {
         const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID!;
-
         const files = await listFilesInFolder(rootFolderId);
 
         return {
@@ -162,7 +125,7 @@ export async function testDriveConnection(): Promise<{ success: boolean; message
     } catch (error) {
         return {
             success: false,
-            message: `Failed to access Drive: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            message: `Drive error: ${error instanceof Error ? error.message : 'Unknown error'}`,
         };
     }
 }
