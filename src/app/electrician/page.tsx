@@ -24,11 +24,15 @@ type StepData = {
     aadhaarFront: File | null;
     aadhaarBack: File | null;
     panFront: File | null;
+    // Step 4 - Bank Details
+    bankAccountName: string;
+    bankAccountNumber: string;
+    bankIfscCode: string;
     // Referral
     referralCode: string;
 };
 
-const STEPS = ['Personal Details', 'Address', 'KYC Upload'];
+const STEPS = ['Personal Details', 'Address', 'KYC Upload', 'Bank Details'];
 const INDIAN_STATES = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
     'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
@@ -60,6 +64,9 @@ export default function ElectricianRegistrationPage() {
         aadhaarFront: null,
         aadhaarBack: null,
         panFront: null,
+        bankAccountName: '',
+        bankAccountNumber: '',
+        bankIfscCode: '',
         referralCode: '',
     });
 
@@ -131,6 +138,14 @@ export default function ElectricianRegistrationPage() {
             if (!formData.panFront) newErrors.panFront = 'PAN card is required';
         }
 
+        if (step === 3) {
+            if (!formData.bankAccountName.trim()) newErrors.bankAccountName = 'Account holder name is required';
+            if (!formData.bankAccountNumber.trim()) newErrors.bankAccountNumber = 'Account number is required';
+            else if (!/^\d{9,18}$/.test(formData.bankAccountNumber)) newErrors.bankAccountNumber = 'Enter valid account number (9-18 digits)';
+            if (!formData.bankIfscCode.trim()) newErrors.bankIfscCode = 'IFSC code is required';
+            else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.bankIfscCode.toUpperCase())) newErrors.bankIfscCode = 'Enter valid IFSC code';
+        }
+
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -198,7 +213,7 @@ export default function ElectricianRegistrationPage() {
 
     // Submit form
     const handleSubmit = async () => {
-        if (!validateStep(2)) return;
+        if (!validateStep(3)) return;
 
         setIsSubmitting(true);
 
@@ -223,6 +238,9 @@ export default function ElectricianRegistrationPage() {
             submitData.append('referredBy', formData.referralCode);
             submitData.append('electricianId', electricianId);
             submitData.append('referralCode', referralCode);
+            submitData.append('bankAccountName', formData.bankAccountName);
+            submitData.append('bankAccountNumber', formData.bankAccountNumber);
+            submitData.append('bankIfscCode', formData.bankIfscCode.toUpperCase());
 
             if (formData.aadhaarFront) submitData.append('aadhaarFront', formData.aadhaarFront);
             if (formData.aadhaarBack) submitData.append('aadhaarBack', formData.aadhaarBack);
@@ -268,43 +286,46 @@ export default function ElectricianRegistrationPage() {
 
     // Success screen
     if (isSuccess) {
+        // Redirect to pending page after showing success briefly
+        setTimeout(() => {
+            window.location.href = '/electrician-pending';
+        }, 3000);
+
         return (
             <main className="min-h-screen gradient-mesh py-12 px-4">
                 <div className="max-w-md mx-auto">
-                    <Card variant="elevated" padding="lg" className="text-center">
-                        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <Card variant="elevated" padding="lg" className="text-center bg-gray-900/80 border border-cyan-500/30 backdrop-blur-lg">
+                        <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse-glow">
+                            <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                             </svg>
                         </div>
 
-                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Registration Successful!</h1>
-                        <p className="text-gray-600 mb-6">
+                        <h1 className="text-2xl font-bold text-glow mb-2">Registration Successful!</h1>
+                        <p className="text-gray-400 mb-6">
                             Your application is under review. We&apos;ll verify your KYC documents and notify you soon.
                         </p>
 
-                        <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                        <div className="bg-gray-800/50 rounded-xl p-4 mb-6">
                             <p className="text-sm text-gray-500 mb-1">Your Electrician ID</p>
-                            <p className="font-mono font-bold text-lg text-gray-900">{generatedId}</p>
+                            <p className="font-mono font-bold text-lg text-cyan-400">{generatedId}</p>
                         </div>
 
-                        <div className="bg-blue-50 rounded-xl p-4 mb-6">
-                            <p className="text-sm text-blue-600 mb-1">Your Referral Code</p>
-                            <p className="font-mono font-bold text-2xl text-blue-700">{generatedReferralCode}</p>
-                            <p className="text-xs text-blue-500 mt-2">
+                        <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 mb-6">
+                            <p className="text-sm text-cyan-300 mb-1">Your Referral Code</p>
+                            <p className="font-mono font-bold text-2xl text-cyan-400">{generatedReferralCode}</p>
+                            <p className="text-xs text-cyan-400/70 mt-2">
                                 Earn ₹100 for each electrician who completes 2 services!
                             </p>
                         </div>
 
-                        <Button fullWidth onClick={copyReferralLink} className="mb-4">
+                        <Button fullWidth onClick={copyReferralLink} className="mb-4 bg-gradient-to-r from-cyan-500 to-cyan-600">
                             📋 Copy Referral Link
                         </Button>
 
-                        <Link href="/">
-                            <Button variant="outline" fullWidth>
-                                Return to Home
-                            </Button>
-                        </Link>
+                        <p className="text-sm text-gray-500 animate-pulse">
+                            Redirecting to your profile...
+                        </p>
                     </Card>
                 </div>
             </main>
@@ -317,7 +338,7 @@ export default function ElectricianRegistrationPage() {
             <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
                 <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
                     <Link href="/" className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
                             <span className="text-white text-sm">⚡</span>
                         </div>
                         <span className="font-bold text-gray-900">Local Electrician</span>
@@ -502,6 +523,50 @@ export default function ElectricianRegistrationPage() {
                                 onChange={(file) => handleFileUpload('panFront', file)}
                                 preview={previews.panFront}
                                 error={errors.panFront}
+                            />
+                        </div>
+                    )}
+
+                    {/* Step 4: Bank Details */}
+                    {currentStep === 3 && (
+                        <div className="space-y-6 animate-slide-up">
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">Bank Details</h2>
+                                <p className="text-gray-500">For receiving payments after successful services</p>
+                            </div>
+
+                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                                <p className="text-sm text-blue-800">
+                                    <span className="font-bold">Note:</span> Bank details are required for receiving service payments. Make sure details match your bank records.
+                                </p>
+                            </div>
+
+                            <Input
+                                label="Account Holder Name"
+                                value={formData.bankAccountName}
+                                onChange={(e) => updateField('bankAccountName', e.target.value)}
+                                error={errors.bankAccountName}
+                                success={!!(touched.bankAccountName && !errors.bankAccountName && formData.bankAccountName.length > 2)}
+                                helpText="Name as per bank records"
+                            />
+
+                            <Input
+                                label="Bank Account Number"
+                                type="text"
+                                value={formData.bankAccountNumber}
+                                onChange={(e) => updateField('bankAccountNumber', e.target.value.replace(/\D/g, '').slice(0, 18))}
+                                error={errors.bankAccountNumber}
+                                success={!!(touched.bankAccountNumber && !errors.bankAccountNumber && /^\d{9,18}$/.test(formData.bankAccountNumber))}
+                                helpText="9-18 digit account number"
+                            />
+
+                            <Input
+                                label="IFSC Code"
+                                value={formData.bankIfscCode}
+                                onChange={(e) => updateField('bankIfscCode', e.target.value.toUpperCase().slice(0, 11))}
+                                error={errors.bankIfscCode}
+                                success={!!(touched.bankIfscCode && !errors.bankIfscCode && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.bankIfscCode))}
+                                helpText="11-character IFSC code (e.g., SBIN0001234)"
                             />
                         </div>
                     )}

@@ -25,6 +25,8 @@ export const SHEET_TABS = {
     CUSTOMERS: 'Customers',
     SERVICE_REQUESTS: 'ServiceRequests',
     REFERRALS: 'Referrals',
+    USERS: 'Users',
+    BANK_DETAILS: 'Bank Details',
 } as const;
 
 // Append a row to a specific sheet tab

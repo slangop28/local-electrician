@@ -1,26 +1,82 @@
+'use client';
+
 import Link from 'next/link';
-import { Button } from '@/components/ui';
+import { useState } from 'react';
+import { Button, OTPLoginModal, Sidebar, ProfileDropdown } from '@/components/ui';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function Home() {
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const { isAuthenticated, userProfile } = useAuth();
+
   return (
     <main className="min-h-screen">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 glass border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-                <span className="text-white text-xl">⚡</span>
+            <div className="flex items-center gap-4">
+              {/* Sidebar Toggle Button */}
+              <button
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors md:hidden"
+                aria-label="Toggle sidebar"
+              >
+                <svg
+                  className="w-6 h-6 text-gray-900"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-xl flex items-center justify-center">
+                  <span className="text-white text-xl">⚡</span>
+                </div>
+                <span className="font-bold text-xl text-gray-900">Local Electrician</span>
               </div>
-              <span className="font-bold text-xl text-gray-900">Local Electrician</span>
             </div>
             <div className="hidden md:flex items-center gap-4">
-              <Link href="/app" className="text-gray-600 hover:text-blue-600 font-medium transition-colors">
-                Find Electrician
-              </Link>
-              <Link href="/electrician">
-                <Button variant="outline" size="sm">Register</Button>
-              </Link>
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="text-gray-600 hover:text-blue-600 font-medium transition-colors flex items-center gap-2"
+              >
+                <span>ℹ️</span>
+                About Us
+              </button>
+              {isAuthenticated ? (
+                <ProfileDropdown />
+              ) : (
+                <button
+                  onClick={() => setIsLoginOpen(true)}
+                  className="px-4 py-2"
+                >
+                  <Button variant="primary" size="sm">Login / Signup</Button>
+                </button>
+              )}
+            </div>
+
+            {/* Mobile Menu Button */}
+            <div className="flex items-center gap-2 md:hidden">
+              {isAuthenticated ? (
+                <ProfileDropdown />
+              ) : (
+                <button
+                  onClick={() => setIsLoginOpen(true)}
+                  className="px-3 py-1.5"
+                >
+                  <Button variant="primary" size="sm">Login</Button>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -42,7 +98,7 @@ export default function Home() {
               </div>
 
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
-                Electrician near you,{' '}
+                <span className="text-glow">Electrician near you,</span>{' '}
                 <span className="text-gradient">in minutes</span>
               </h1>
 
@@ -51,39 +107,48 @@ export default function Home() {
               </p>
 
               {/* CTA Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                <Link href="/app">
-                  <Button size="lg" className="w-full sm:w-auto">
-                    <span className="mr-2">📍</span>
-                    Find Electrician
-                  </Button>
-                </Link>
-                <Link href="/electrician">
-                  <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                    <span className="mr-2">👷</span>
-                    Register as Electrician
-                  </Button>
-                </Link>
+              <div className="flex flex-col items-center lg:items-start gap-4 w-full">
+                {isAuthenticated && userProfile?.userType === 'customer' ? (
+                  <Link href="/app" className="w-full lg:w-auto group">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/40 to-cyan-400/40 rounded-xl blur-xl group-hover:blur-2xl transition-all duration-300 animate-pulse-glow" />
+                      <Button size="lg" className="relative w-full px-12 py-6 text-xl bg-gradient-to-r from-cyan-500 to-cyan-400 text-white font-bold rounded-xl hover:from-cyan-600 hover:to-cyan-500 border border-cyan-300/50 hover:border-cyan-200/80 transition-all duration-300 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40 animate-pulse">
+                        <span className="mr-3">📍</span>
+                        Find Electrician Near Me
+                      </Button>
+                    </div>
+                  </Link>
+                ) : (
+                  <button
+                    onClick={() => setIsLoginOpen(true)}
+                    className="w-full lg:w-auto px-12 py-6 text-xl font-bold rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-600 hover:to-blue-700 border-2 border-cyan-400/50 flex items-center justify-center gap-3 transition-all duration-300 shadow-lg shadow-cyan-500/20"
+                  >
+                    <span>⚡</span>
+                    Login to Find Electrician
+                  </button>
+                )}
               </div>
 
               {/* Trust badges */}
-              <div className="flex items-center justify-center lg:justify-start gap-6 mt-10">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                    <span className="text-green-600">✓</span>
+              <div className="flex flex-col items-center lg:items-start gap-6 mt-10">
+                <div className="flex items-center justify-center lg:justify-start gap-6">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <span className="text-green-600">✓</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-gray-900">KYC Verified</p>
+                      <p className="text-xs text-gray-500">All electricians</p>
+                    </div>
                   </div>
-                  <div className="text-left">
-                    <p className="font-bold text-gray-900">KYC Verified</p>
-                    <p className="text-xs text-gray-500">All electricians</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-blue-600">⚡</span>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-gray-900">60 Seconds</p>
-                    <p className="text-xs text-gray-500">Quick booking</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-cyan-100 rounded-full flex items-center justify-center">
+                      <span className="text-cyan-600">⚡</span>
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-gray-900">60 Seconds</p>
+                      <p className="text-xs text-gray-500">Quick booking</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -96,12 +161,12 @@ export default function Home() {
                 <div className="absolute inset-0 bg-white rounded-3xl shadow-2xl p-8 animate-float">
                   <div className="h-full flex flex-col">
                     <div className="flex items-center gap-4 mb-6">
-                      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center">
+                      <div className="w-16 h-16 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-2xl flex items-center justify-center">
                         <span className="text-3xl">👷</span>
                       </div>
                       <div>
                         <h3 className="font-bold text-xl text-gray-900">Rajesh Kumar</h3>
-                        <p className="text-gray-500">Verified Electrician</p>
+                        <p className="text-cyan-600">Verified Electrician</p>
                       </div>
                     </div>
 
@@ -115,9 +180,9 @@ export default function Home() {
                     </div>
 
                     <div className="flex gap-2 flex-wrap mb-6">
-                      <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">Wiring</span>
-                      <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">Fans</span>
-                      <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">MCB</span>
+                      <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">Wiring</span>
+                      <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">Fans</span>
+                      <span className="px-3 py-1 bg-cyan-50 text-cyan-700 rounded-full text-sm font-medium">MCB</span>
                     </div>
 
                     <div className="mt-auto">
@@ -125,7 +190,7 @@ export default function Home() {
                         <span className="text-gray-500">Distance</span>
                         <span className="font-bold text-gray-900">1.2 km away</span>
                       </div>
-                      <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors">
+                      <button className="w-full bg-gradient-to-r from-cyan-500 to-cyan-600 text-white py-3 rounded-xl font-bold hover:from-cyan-600 hover:to-cyan-700 transition-all shadow-lg shadow-cyan-500/30">
                         Book Now
                       </button>
                     </div>
@@ -165,7 +230,7 @@ export default function Home() {
           <div className="grid md:grid-cols-3 gap-8">
             {/* Speed */}
             <div className="bg-white rounded-2xl p-8 shadow-lg hover:shadow-xl transition-shadow">
-              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-14 h-14 bg-cyan-100 rounded-2xl flex items-center justify-center mb-6">
                 <span className="text-3xl">⚡</span>
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-3">Lightning Fast</h3>
@@ -218,7 +283,7 @@ export default function Home() {
               { step: '03', title: 'Get Service', desc: 'Electrician arrives at your doorstep. Pay after the job is done.', icon: '✅' },
             ].map((item, i) => (
               <div key={i} className="relative">
-                <div className="text-6xl font-bold text-blue-100 mb-4">{item.step}</div>
+                <div className="text-6xl font-bold text-cyan-100 mb-4">{item.step}</div>
                 <div className="flex items-center gap-3 mb-3">
                   <span className="text-2xl">{item.icon}</span>
                   <h3 className="text-xl font-bold text-gray-900">{item.title}</h3>
@@ -226,7 +291,7 @@ export default function Home() {
                 <p className="text-gray-600">{item.desc}</p>
 
                 {i < 2 && (
-                  <div className="hidden md:block absolute top-8 right-0 w-1/3 h-0.5 bg-blue-100" />
+                  <div className="hidden md:block absolute top-8 right-0 w-1/3 h-0.5 bg-cyan-100" />
                 )}
               </div>
             ))}
@@ -238,23 +303,55 @@ export default function Home() {
       <section className="py-20 gradient-hero text-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl sm:text-4xl font-bold mb-6">
-            Ready to Get Started?
+            {isAuthenticated
+              ? `Welcome back, ${userProfile?.name?.split(' ')[0] || userProfile?.username}!`
+              : 'Ready to Get Started?'}
           </h2>
           <p className="text-xl text-blue-100 mb-8">
-            Join thousands of satisfied customers and electricians on our platform.
+            {isAuthenticated
+              ? userProfile?.userType === 'customer'
+                ? 'Find and book verified electricians in your area.'
+                : 'Manage your bookings and grow your business.'
+              : 'Join thousands of satisfied customers and electricians on our platform.'}
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/app">
-              <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                Find Electrician Near Me
-              </Button>
-            </Link>
-            <Link href="/electrician">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto border-white text-white hover:bg-white/10">
-                Earn as Electrician
-              </Button>
-            </Link>
+            {isAuthenticated && userProfile?.userType === 'customer' ? (
+              <Link href="/app">
+                <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                  Find Electrician Near Me
+                </Button>
+              </Link>
+            ) : !isAuthenticated ? (
+              <>
+                <button
+                  onClick={() => setIsLoginOpen(true)}
+                  className="w-full sm:w-auto"
+                >
+                  <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                    Login / Signup
+                  </Button>
+                </button>
+              </>
+            ) : null}
+
+            {isAuthenticated && userProfile?.userType === 'electrician' && userProfile?.electricianStatus === 'VERIFIED' && (
+              <Link href="/electrician-dashboard">
+                <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                  Go to Dashboard
+                </Button>
+              </Link>
+            )}
+
+            {/* Register as Electrician button for logged-in customers */}
+            {isAuthenticated && userProfile?.userType === 'customer' && (
+              <Link href="/electrician">
+                <button className="w-full sm:w-auto px-8 py-4 text-lg font-bold rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 border-2 border-green-400/50 flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-green-500/20">
+                  <span>👷</span>
+                  Register as Electrician
+                </button>
+              </Link>
+            )}
           </div>
 
           <div className="mt-10 flex items-center justify-center gap-8 text-blue-100">
@@ -281,7 +378,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-xl flex items-center justify-center">
                 <span className="text-white text-xl">⚡</span>
               </div>
               <span className="font-bold text-xl">Local Electrician</span>
@@ -300,6 +397,18 @@ export default function Home() {
           </div>
         </div>
       </footer>
-    </main>
+
+      {/* OTP Login Modal */}
+      <OTPLoginModal
+        isOpen={isLoginOpen}
+        onClose={() => setIsLoginOpen(false)}
+      />
+
+      {/* Sidebar */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
+    </main >
   );
 }

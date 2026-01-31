@@ -5,3 +5,8 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 export { StepIndicator } from './StepIndicator';
 export { FileUpload } from './FileUpload';
 export { ToastProvider, useToast } from './Toast';
+export { default as LoginModal } from './LoginModal';
+export { default as OTPLoginModal } from './OTPLoginModal';
+export { default as Sidebar } from './Sidebar';
+export { default as ProfileDropdown } from './ProfileDropdown';
+

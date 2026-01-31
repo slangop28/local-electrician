@@ -24,6 +24,11 @@ export async function POST(request: NextRequest) {
         const electricianId = formData.get('electricianId') as string;
         const referralCode = formData.get('referralCode') as string;
 
+        // Bank details
+        const bankAccountName = formData.get('bankAccountName') as string || '';
+        const bankAccountNumber = formData.get('bankAccountNumber') as string || '';
+        const bankIfscCode = formData.get('bankIfscCode') as string || '';
+
         // Validate required fields
         if (!name || !phonePrimary || !houseNo || !area || !city || !state || !pincode) {
             return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -106,8 +111,21 @@ export async function POST(request: NextRequest) {
             '0',                      // WalletBalance
         ];
 
-        // Append to Google Sheets
+        // Append to Google Sheets - Electricians
         await appendRow(SHEET_TABS.ELECTRICIANS, rowData);
+
+        // Save bank details to separate sheet
+        if (bankAccountName && bankAccountNumber && bankIfscCode) {
+            const bankRowData = [
+                getTimestamp(),       // Timestamp
+                electricianId,        // ElectricianID
+                bankAccountName,      // AccountHolderName
+                bankAccountNumber,    // AccountNumber
+                bankIfscCode,         // IFSCCode
+                'ACTIVE',             // Status
+            ];
+            await appendRow(SHEET_TABS.BANK_DETAILS, bankRowData);
+        }
 
         return NextResponse.json({
             success: true,
@@ -124,3 +142,4 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
     }
 }
+
