@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { Button, Card } from '@/components/ui';
 
+// Force dynamic rendering to prevent prerendering issues with useSearchParams
+export const dynamic = 'force-dynamic';
+
 interface ServiceRequest {
     requestId: string;
     electricianId: string;
