@@ -1,13 +1,10 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { Button, Card } from '@/components/ui';
-
-// Force dynamic rendering to prevent prerendering issues with useSearchParams
-export const dynamic = 'force-dynamic';
 
 interface ServiceRequest {
     requestId: string;
@@ -19,21 +16,23 @@ interface ServiceRequest {
     timestamp: string;
 }
 
-function ProfileContent() {
+export default function ProfilePage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const { userProfile, isAuthenticated, isLoading } = useAuth();
     const [activeTab, setActiveTab] = useState<'profile' | 'history'>('profile');
     const [serviceHistory, setServiceHistory] = useState<ServiceRequest[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
 
-    // Set active tab from URL params
+    // Set active tab from URL params (client-side only)
     useEffect(() => {
-        const tab = searchParams.get('tab');
-        if (tab === 'history') {
-            setActiveTab('history');
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            const tab = params.get('tab');
+            if (tab === 'history') {
+                setActiveTab('history');
+            }
         }
-    }, [searchParams]);
+    }, []);
 
     // Fetch service history
     useEffect(() => {
@@ -227,23 +226,5 @@ function ProfileContent() {
                 )}
             </div>
         </main>
-    );
-}
-
-// Loading fallback component
-function ProfileLoading() {
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-            <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
-        </div>
-    );
-}
-
-// Main export with Suspense boundary
-export default function ProfilePage() {
-    return (
-        <Suspense fallback={<ProfileLoading />}>
-            <ProfileContent />
-        </Suspense>
     );
 }
