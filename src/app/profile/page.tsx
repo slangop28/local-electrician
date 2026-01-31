@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
@@ -16,7 +16,7 @@ interface ServiceRequest {
     timestamp: string;
 }
 
-export default function ProfilePage() {
+function ProfileContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { userProfile, isAuthenticated, isLoading } = useAuth();
@@ -89,7 +89,7 @@ export default function ProfilePage() {
             <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
                 <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
                     <Link href="/" className="flex items-center gap-2">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
                             <span className="text-white text-sm">⚡</span>
                         </div>
                         <span className="font-bold text-gray-900">Local Electrician</span>
@@ -100,7 +100,7 @@ export default function ProfilePage() {
 
             <div className="max-w-4xl mx-auto px-4 py-8">
                 {/* Profile Header */}
-                <div className="bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl p-6 mb-6 text-white">
+                <div className="bg-gradient-to-r from-cyan-500 to-cyan-600 rounded-2xl p-6 mb-6 text-white">
                     <div className="flex items-center gap-4">
                         <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center text-4xl">
                             👤
@@ -120,8 +120,8 @@ export default function ProfilePage() {
                     <button
                         onClick={() => setActiveTab('profile')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'profile'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100'
                             }`}
                     >
                         Profile Details
@@ -129,8 +129,8 @@ export default function ProfilePage() {
                     <button
                         onClick={() => setActiveTab('history')}
                         className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'history'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100'
                             }`}
                     >
                         Service History
@@ -187,7 +187,7 @@ export default function ProfilePage() {
                         {loadingHistory ? (
                             <Card variant="elevated" padding="lg">
                                 <div className="flex items-center justify-center py-8">
-                                    <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+                                    <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
                                 </div>
                             </Card>
                         ) : serviceHistory.length === 0 ? (
@@ -224,5 +224,23 @@ export default function ProfilePage() {
                 )}
             </div>
         </main>
+    );
+}
+
+// Loading fallback component
+function ProfileLoading() {
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
+        </div>
+    );
+}
+
+// Main export with Suspense boundary
+export default function ProfilePage() {
+    return (
+        <Suspense fallback={<ProfileLoading />}>
+            <ProfileContent />
+        </Suspense>
     );
 }
