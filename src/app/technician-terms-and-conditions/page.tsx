@@ -1,7 +1,212 @@
-import Link from 'next/link';
-import { Button } from '@/components/ui';
+'use client';
 
-export default function TechnicianTermsAndConditions() {
+import Link from 'next/link';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Button, Input } from '@/components/ui';
+import { generateId, generateReferralCode } from '@/lib/utils';
+
+interface StoredData {
+  name: string;
+  phonePrimary: string;
+  phoneSecondary: string;
+  houseNo: string;
+  area: string;
+  city: string;
+  district: string;
+  state: string;
+  pincode: string;
+  lat: number | null;
+  lng: number | null;
+  referralCode: string;
+  aadhaarFrontBase64: string | null;
+  aadhaarFrontName: string | null;
+  aadhaarFrontType: string | null;
+  aadhaarBackBase64: string | null;
+  aadhaarBackName: string | null;
+  aadhaarBackType: string | null;
+  panFrontBase64: string | null;
+  panFrontName: string | null;
+  panFrontType: string | null;
+}
+
+function base64ToFile(base64: string, filename: string, mimeType: string): File {
+  const arr = base64.split(',');
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mimeType });
+}
+
+function TechnicianTermsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromRegistration = searchParams.get('fromRegistration') === 'true';
+
+  const [agreed, setAgreed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [generatedId, setGeneratedId] = useState('');
+  const [generatedReferralCode, setGeneratedReferralCodeState] = useState('');
+  const [storedData, setStoredData] = useState<StoredData | null>(null);
+
+  // Bank details form
+  const [bankAccountName, setBankAccountName] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankIfscCode, setBankIfscCode] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (fromRegistration) {
+      const data = sessionStorage.getItem('technicianRegistrationData');
+      if (data) {
+        setStoredData(JSON.parse(data));
+      } else {
+        // No data found, redirect back to registration
+        router.push('/electrician');
+      }
+    }
+  }, [fromRegistration, router]);
+
+  const validateBankDetails = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!bankAccountName.trim()) newErrors.bankAccountName = 'Account holder name is required';
+    if (!bankAccountNumber.trim()) newErrors.bankAccountNumber = 'Account number is required';
+    else if (!/^\d{9,18}$/.test(bankAccountNumber)) newErrors.bankAccountNumber = 'Enter valid account number (9-18 digits)';
+    if (!bankIfscCode.trim()) newErrors.bankIfscCode = 'IFSC code is required';
+    else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(bankIfscCode.toUpperCase())) newErrors.bankIfscCode = 'Enter valid IFSC code';
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmitRegistration = async () => {
+    if (!validateBankDetails() || !storedData) return;
+
+    setIsSubmitting(true);
+
+    try {
+      // Generate IDs
+      const electricianId = generateId('ELEC');
+      const referralCode = generateReferralCode();
+
+      // Create form data for file upload
+      const submitData = new FormData();
+      submitData.append('name', storedData.name);
+      submitData.append('phonePrimary', storedData.phonePrimary);
+      submitData.append('phoneSecondary', storedData.phoneSecondary);
+      submitData.append('houseNo', storedData.houseNo);
+      submitData.append('area', storedData.area);
+      submitData.append('city', storedData.city);
+      submitData.append('district', storedData.district);
+      submitData.append('state', storedData.state);
+      submitData.append('pincode', storedData.pincode);
+      submitData.append('lat', storedData.lat?.toString() || '');
+      submitData.append('lng', storedData.lng?.toString() || '');
+      submitData.append('referredBy', storedData.referralCode);
+      submitData.append('electricianId', electricianId);
+      submitData.append('referralCode', referralCode);
+      submitData.append('bankAccountName', bankAccountName);
+      submitData.append('bankAccountNumber', bankAccountNumber);
+      submitData.append('bankIfscCode', bankIfscCode.toUpperCase());
+      submitData.append('agreedToTerms', 'true');
+
+      // Convert base64 back to files
+      if (storedData.aadhaarFrontBase64 && storedData.aadhaarFrontName && storedData.aadhaarFrontType) {
+        const file = base64ToFile(storedData.aadhaarFrontBase64, storedData.aadhaarFrontName, storedData.aadhaarFrontType);
+        submitData.append('aadhaarFront', file);
+      }
+      if (storedData.aadhaarBackBase64 && storedData.aadhaarBackName && storedData.aadhaarBackType) {
+        const file = base64ToFile(storedData.aadhaarBackBase64, storedData.aadhaarBackName, storedData.aadhaarBackType);
+        submitData.append('aadhaarBack', file);
+      }
+      if (storedData.panFrontBase64 && storedData.panFrontName && storedData.panFrontType) {
+        const file = base64ToFile(storedData.panFrontBase64, storedData.panFrontName, storedData.panFrontType);
+        submitData.append('panFront', file);
+      }
+
+      const response = await fetch('/api/electrician/register', {
+        method: 'POST',
+        body: submitData,
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Clear stored data
+        sessionStorage.removeItem('technicianRegistrationData');
+        setGeneratedId(electricianId);
+        setGeneratedReferralCodeState(referralCode);
+        setIsSuccess(true);
+      } else {
+        alert(result.error || 'Registration failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Submit error:', error);
+      alert('Registration failed. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Copy referral link
+  const copyReferralLink = () => {
+    const link = `${window.location.origin}/electrician?ref=${generatedReferralCode}`;
+    navigator.clipboard.writeText(link);
+    alert('Referral link copied!');
+  };
+
+  // Success screen
+  if (isSuccess) {
+    setTimeout(() => {
+      window.location.href = '/electrician-pending';
+    }, 3000);
+
+    return (
+      <main className="min-h-screen gradient-mesh py-12 px-4">
+        <div className="max-w-md mx-auto">
+          <div className="text-center bg-gray-900/80 border border-cyan-500/30 backdrop-blur-lg rounded-2xl p-8 shadow-xl">
+            <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+              <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+
+            <h1 className="text-2xl font-bold text-white mb-2">Registration Successful!</h1>
+            <p className="text-gray-400 mb-6">
+              Your application is under review. We&apos;ll verify your KYC documents and notify you soon.
+            </p>
+
+            <div className="bg-gray-800/50 rounded-xl p-4 mb-6">
+              <p className="text-sm text-gray-500 mb-1">Your Electrician ID</p>
+              <p className="font-mono font-bold text-lg text-cyan-400">{generatedId}</p>
+            </div>
+
+            <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-4 mb-6">
+              <p className="text-sm text-cyan-300 mb-1">Your Referral Code</p>
+              <p className="font-mono font-bold text-2xl text-cyan-400">{generatedReferralCode}</p>
+              <p className="text-xs text-cyan-400/70 mt-2">
+                Earn ₹100 for each electrician who completes 2 services!
+              </p>
+            </div>
+
+            <Button fullWidth onClick={copyReferralLink} className="mb-4 bg-gradient-to-r from-cyan-500 to-cyan-600">
+              📋 Copy Referral Link
+            </Button>
+
+            <p className="text-sm text-gray-500 animate-pulse">
+              Redirecting to your profile...
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white">
       {/* Navigation */}
@@ -14,6 +219,9 @@ export default function TechnicianTermsAndConditions() {
               </div>
               <span className="font-bold text-xl text-gray-900">Local Electrician</span>
             </Link>
+            {fromRegistration && (
+              <span className="text-sm text-blue-600 font-medium">Step 4 of 4: Terms & Conditions</span>
+            )}
           </div>
         </div>
       </nav>
@@ -394,11 +602,50 @@ export default function TechnicianTermsAndConditions() {
             </section>
           </div>
 
+          {/* Bank Details Form - Only shown when coming from registration */}
+          {fromRegistration && storedData && (
+            <div className="mt-12 p-6 bg-blue-50 rounded-lg border border-blue-200">
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Bank Details for Payments</h3>
+              <p className="text-gray-600 mb-6">
+                Please provide your bank details for receiving payments after successful services.
+              </p>
+
+              <div className="space-y-4">
+                <Input
+                  label="Account Holder Name"
+                  value={bankAccountName}
+                  onChange={(e) => setBankAccountName(e.target.value)}
+                  error={errors.bankAccountName}
+                  helpText="Name as per bank records"
+                />
+
+                <Input
+                  label="Bank Account Number"
+                  type="text"
+                  value={bankAccountNumber}
+                  onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 18))}
+                  error={errors.bankAccountNumber}
+                  helpText="9-18 digit account number"
+                />
+
+                <Input
+                  label="IFSC Code"
+                  value={bankIfscCode}
+                  onChange={(e) => setBankIfscCode(e.target.value.toUpperCase().slice(0, 11))}
+                  error={errors.bankIfscCode}
+                  helpText="11-character IFSC code (e.g., SBIN0001234)"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Agreement Checkbox */}
           <div className="mt-12 p-6 bg-green-50 rounded-lg">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
                 className="w-5 h-5 mt-1 rounded border-gray-300"
               />
               <span>
@@ -414,16 +661,36 @@ export default function TechnicianTermsAndConditions() {
 
           {/* Actions */}
           <div className="mt-8 flex gap-4 justify-center">
-            <Link href="/">
-              <Button variant="outline" size="lg">
-                Back to Home
-              </Button>
-            </Link>
-            <Link href="/electrician">
-              <Button size="lg">
-                Register as Technician
-              </Button>
-            </Link>
+            {fromRegistration ? (
+              <>
+                <Link href="/electrician">
+                  <Button variant="outline" size="lg">
+                    ← Back to Registration
+                  </Button>
+                </Link>
+                <Button
+                  size="lg"
+                  onClick={handleSubmitRegistration}
+                  loading={isSubmitting}
+                  disabled={!agreed || !bankAccountName || !bankAccountNumber || !bankIfscCode}
+                >
+                  Complete Registration
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link href="/">
+                  <Button variant="outline" size="lg">
+                    Back to Home
+                  </Button>
+                </Link>
+                <Link href="/electrician">
+                  <Button size="lg">
+                    Register as Technician
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -453,5 +720,20 @@ export default function TechnicianTermsAndConditions() {
         </div>
       </footer>
     </main>
+  );
+}
+
+export default function TechnicianTermsAndConditions() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </main>
+    }>
+      <TechnicianTermsContent />
+    </Suspense>
   );
 }

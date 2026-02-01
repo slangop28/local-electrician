@@ -128,15 +128,17 @@ export default function ProfilePage() {
                     >
                         Profile Details
                     </button>
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'history'
-                            ? 'bg-cyan-600 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-100'
-                            }`}
-                    >
-                        Service History
-                    </button>
+                    {userProfile.userType === 'customer' && (
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'history'
+                                ? 'bg-cyan-600 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                                }`}
+                        >
+                            Service History
+                        </button>
+                    )}
                 </div>
 
                 {/* Profile Tab */}
@@ -183,8 +185,8 @@ export default function ProfilePage() {
                     </Card>
                 )}
 
-                {/* History Tab */}
-                {activeTab === 'history' && (
+                {/* History Tab - Only for Customers */}
+                {activeTab === 'history' && userProfile.userType === 'customer' && (
                     <div className="space-y-4">
                         {loadingHistory ? (
                             <Card variant="elevated" padding="lg">

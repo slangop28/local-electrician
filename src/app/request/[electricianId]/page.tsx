@@ -278,7 +278,7 @@ export default function ServiceRequestPage({
                                 value={preferredDate}
                                 onChange={(e) => setPreferredDate(e.target.value)}
                                 min={getMinDate()}
-                                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500"
+                                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 text-gray-900"
                             />
                         </div>
 
@@ -289,7 +289,7 @@ export default function ServiceRequestPage({
                             <select
                                 value={preferredSlot}
                                 onChange={(e) => setPreferredSlot(e.target.value)}
-                                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500"
+                                className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 text-gray-900"
                             >
                                 <option value="">Select slot</option>
                                 {TIME_SLOTS.map((slot) => (
@@ -309,7 +309,7 @@ export default function ServiceRequestPage({
                             onChange={(e) => setIssueDetail(e.target.value)}
                             placeholder="E.g., Fan making noise, switch not working..."
                             rows={3}
-                            className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 resize-none"
+                            className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 resize-none text-gray-900 placeholder:text-gray-400"
                         />
                     </div>
 

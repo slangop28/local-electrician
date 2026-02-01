@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
                 bankAccountName,      // AccountHolderName
                 bankAccountNumber,    // AccountNumber
                 bankIfscCode,         // IFSCCode
-                'ACTIVE',             // Status
+                'PENDING',            // Status
             ];
             await appendRow(SHEET_TABS.BANK_DETAILS, bankRowData);
         }

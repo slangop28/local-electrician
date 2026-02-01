@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows, SHEET_TABS } from '@/lib/google-sheets';
+import { getRows, SHEET_TABS, ensureSheet } from '@/lib/google-sheets';
 
 export async function GET(request: NextRequest) {
     try {
@@ -81,11 +81,40 @@ export async function GET(request: NextRequest) {
         electricianData.servicesCompleted = completedCount;
 
         // Sort services by timestamp descending
+        // Sort services by timestamp descending
         services.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        // Get bank details
+        let bankDetails = null;
+
+        // Find bank details for this electrician
+        // Assuming columns: Timestamp, ElectricianID, AccountantName, AccountNumber, IFSCCode, Status
+        // Indices: 0, 1, 2, 3, 4, 5
+        // Ensure sheet exists before reading
+        try {
+            await ensureSheet(SHEET_TABS.BANK_DETAILS);
+        } catch (e) {
+            console.warn('Could not ensure bank sheet:', e);
+        }
+
+        const bankRows = await getRows(SHEET_TABS.BANK_DETAILS);
+        const bankRow = bankRows.find((row: string[]) => row[1] === electricianId);
+
+        if (bankRow) {
+            bankDetails = {
+                accountName: bankRow[2],
+                accountNumber: bankRow[3],
+                ifscCode: bankRow[4],
+                status: bankRow[5] || 'PENDING'
+            };
+        }
 
         return NextResponse.json({
             success: true,
-            electrician: electricianData,
+            electrician: {
+                ...electricianData,
+                bankDetails
+            },
             services
         });
     } catch (error) {

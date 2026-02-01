@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Button, Card, Input } from '@/components/ui';
+import { Button, Card, Input, useToast } from '@/components/ui';
+import { PaymentModal } from '@/components/ui/PaymentModal';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
 
 interface Electrician {
     id: string;
@@ -17,6 +19,8 @@ interface Electrician {
 }
 
 export default function CustomerDashboard() {
+    const { userProfile } = useAuth();
+    const { showToast } = useToast();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [address, setAddress] = useState('');
     const [electricians, setElectricians] = useState<Electrician[]>([]);
@@ -25,29 +29,118 @@ export default function CustomerDashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
     const [gettingLocation, setGettingLocation] = useState(false);
 
-    // Get user's location
+    // Request & Payment State
+    const [activeRequest, setActiveRequest] = useState<any>(null);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+    // Fetch active request
+    useEffect(() => {
+        if (userProfile?.id) {
+            fetchActiveRequest();
+        }
+    }, [userProfile]);
+
+    const fetchActiveRequest = async () => {
+        try {
+            const response = await fetch(`/api/customer/active-request?customerId=${userProfile?.id}`);
+            const data = await response.json();
+            if (data.success && data.activeRequest) {
+                // Only show if status is relevant (NEW, ACCEPTED, SUCCESS)
+                if (['NEW', 'ACCEPTED', 'SUCCESS'].includes(data.activeRequest.status)) {
+                    setActiveRequest(data.activeRequest);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch request:', error);
+        }
+    };
+
+    const handlePaymentSuccess = async () => {
+        if (!activeRequest) return;
+        try {
+            const response = await fetch('/api/customer/pay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId: activeRequest.requestId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Payment successful! Technician rated.', 'success');
+                setActiveRequest(null); // Clear request or showing rated state
+                setShowPaymentModal(false);
+            } else {
+                showToast('Failed to record payment', 'error');
+            }
+        } catch (error) {
+            showToast('Payment processing error', 'error');
+        }
+    };
+
+    // Get user's location with improved reliability
     const handleGetLocation = () => {
         if ('geolocation' in navigator) {
             setGettingLocation(true);
             setError('');
 
+            // First try with high accuracy
+            const highAccuracyOptions = {
+                enableHighAccuracy: true,
+                timeout: 10000, // 10 second timeout
+                maximumAge: 60000 // Accept cached position up to 1 minute old
+            };
+
+            // Fallback to lower accuracy if high accuracy fails
+            const lowAccuracyOptions = {
+                enableHighAccuracy: false,
+                timeout: 15000, // 15 second timeout
+                maximumAge: 300000 // Accept cached position up to 5 minutes old
+            };
+
+            const onSuccess = (position: GeolocationPosition) => {
+                setLocation({
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                });
+                setGettingLocation(false);
+            };
+
+            const onHighAccuracyError = (err: GeolocationPositionError) => {
+                console.warn('High accuracy location failed, trying low accuracy...', err);
+                // Try again with lower accuracy as fallback
+                navigator.geolocation.getCurrentPosition(
+                    onSuccess,
+                    onFinalError,
+                    lowAccuracyOptions
+                );
+            };
+
+            const onFinalError = (err: GeolocationPositionError) => {
+                console.error('Location error:', err);
+                setGettingLocation(false);
+
+                // Provide more specific error messages
+                switch (err.code) {
+                    case err.PERMISSION_DENIED:
+                        setError('Location permission denied. Please enable location access in your browser settings and try again.');
+                        break;
+                    case err.POSITION_UNAVAILABLE:
+                        setError('Location unavailable. Please check your GPS/network connection or enter address manually.');
+                        break;
+                    case err.TIMEOUT:
+                        setError('Location request timed out. Please try again or enter address manually.');
+                        break;
+                    default:
+                        setError('Could not get your location. Please enter address manually.');
+                }
+            };
+
             navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    setLocation({
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                    });
-                    setGettingLocation(false);
-                },
-                (err) => {
-                    console.error('Location error:', err);
-                    setError('Could not get your location. Please enter address manually.');
-                    setGettingLocation(false);
-                },
-                { enableHighAccuracy: true }
+                onSuccess,
+                onHighAccuracyError,
+                highAccuracyOptions
             );
         } else {
-            setError('Geolocation is not supported by your browser');
+            setError('Geolocation is not supported by your browser. Please enter address manually.');
         }
     };
 
@@ -125,6 +218,70 @@ export default function CustomerDashboard() {
             </header>
 
             <div className="max-w-7xl mx-auto px-4 py-6">
+
+                {/* Active Request Card */}
+                {activeRequest && (
+                    <Card variant="elevated" padding="md" className="mb-6 border-l-4 border-l-blue-500 bg-blue-50/50">
+                        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                    <span className="text-2xl">⚡</span>
+                                    Current Service
+                                </h2>
+                                <p className="text-gray-600 mt-1">
+                                    {activeRequest.serviceType} • {activeRequest.timestamp ? new Date(activeRequest.timestamp).toLocaleDateString() : ''}
+                                </p>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <span className={cn(
+                                        "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider",
+                                        activeRequest.status === 'NEW' ? "bg-amber-100 text-amber-700" :
+                                            activeRequest.status === 'ACCEPTED' ? "bg-blue-100 text-blue-700" :
+                                                activeRequest.status === 'SUCCESS' ? "bg-green-100 text-green-700" :
+                                                    "bg-gray-100 text-gray-700"
+                                    )}>
+                                        {activeRequest.status === 'SUCCESS' ? 'Service Completed' : activeRequest.status}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {activeRequest.status === 'SUCCESS' && (
+                                <div className="w-full md:w-auto">
+                                    <Button
+                                        onClick={() => setShowPaymentModal(true)}
+                                        className="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 animate-pulse"
+                                    >
+                                        Confirm & Pay ₹250
+                                    </Button>
+                                    <p className="text-xs text-center md:text-right text-gray-500 mt-2">
+                                        Please confirm service completion
+                                    </p>
+                                </div>
+                            )}
+
+                            {activeRequest.status === 'ACCEPTED' && (
+                                <div className="text-sm text-blue-600 bg-blue-100 px-4 py-2 rounded-lg">
+                                    Electrician is on the way!
+                                </div>
+                            )}
+
+                            {activeRequest.status === 'NEW' && (
+                                <div className="text-sm text-amber-600 bg-amber-100 px-4 py-2 rounded-lg">
+                                    Searching for nearby electricians...
+                                </div>
+                            )}
+                        </div>
+                    </Card>
+                )}
+
+                {/* Payment Modal */}
+                <PaymentModal
+                    isOpen={showPaymentModal}
+                    onClose={() => setShowPaymentModal(false)}
+                    onSuccess={handlePaymentSuccess}
+                    amount={250} // Hardcoded for now
+                    serviceType={activeRequest?.serviceType || 'Service'}
+                />
+
                 {/* Location Section */}
                 <Card variant="elevated" padding="md" className="mb-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">📍 Your Location</h2>

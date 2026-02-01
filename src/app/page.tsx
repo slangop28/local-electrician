@@ -1,14 +1,27 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, OTPLoginModal, Sidebar, ProfileDropdown } from '@/components/ui';
 import { useAuth } from '@/lib/AuthContext';
 
 export default function Home() {
+  const router = useRouter();
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { isAuthenticated, userProfile } = useAuth();
+  const { isAuthenticated, userProfile, isLoading } = useAuth();
+
+  // Auto-redirect technicians to their dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && userProfile) {
+      if (userProfile.isElectrician && userProfile.electricianStatus === 'VERIFIED') {
+        router.push('/electrician-dashboard');
+      } else if (userProfile.isElectrician && userProfile.electricianStatus === 'PENDING') {
+        router.push('/electrician-pending');
+      }
+    }
+  }, [isLoading, isAuthenticated, userProfile, router]);
 
   return (
     <main className="min-h-screen">
@@ -24,7 +37,7 @@ export default function Home() {
                 aria-label="Toggle sidebar"
               >
                 <svg
-                  className="w-6 h-6 text-gray-900"
+                  className="w-6 h-6 text-cyan-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Input, StepIndicator, FileUpload, Card } from '@/components/ui';
 import { validatePhone, validatePincode, generateId, generateReferralCode, cn } from '@/lib/utils';
@@ -32,7 +33,7 @@ type StepData = {
     referralCode: string;
 };
 
-const STEPS = ['Personal Details', 'Address', 'KYC Upload', 'Bank Details'];
+const STEPS = ['Personal Details', 'Address', 'KYC Upload'];
 const INDIAN_STATES = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
     'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
@@ -43,6 +44,7 @@ const INDIAN_STATES = [
 ];
 
 export default function ElectricianRegistrationPage() {
+    const router = useRouter();
     const [currentStep, setCurrentStep] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
@@ -150,9 +152,55 @@ export default function ElectricianRegistrationPage() {
         return Object.keys(newErrors).length === 0;
     };
 
+    // Convert file to base64 for storage
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = error => reject(error);
+        });
+    };
+
     // Next step
-    const handleNext = () => {
+    const handleNext = async () => {
         if (validateStep(currentStep)) {
+            // After KYC Upload step (step 2), redirect to T&C page
+            if (currentStep === 2) {
+                // Store form data in sessionStorage before redirecting to T&C
+                try {
+                    const dataToStore = {
+                        name: formData.name,
+                        phonePrimary: formData.phonePrimary,
+                        phoneSecondary: formData.phoneSecondary,
+                        houseNo: formData.houseNo,
+                        area: formData.area,
+                        city: formData.city,
+                        district: formData.district,
+                        state: formData.state,
+                        pincode: formData.pincode,
+                        lat: formData.lat,
+                        lng: formData.lng,
+                        referralCode: formData.referralCode,
+                        aadhaarFrontBase64: formData.aadhaarFront ? await fileToBase64(formData.aadhaarFront) : null,
+                        aadhaarFrontName: formData.aadhaarFront?.name || null,
+                        aadhaarFrontType: formData.aadhaarFront?.type || null,
+                        aadhaarBackBase64: formData.aadhaarBack ? await fileToBase64(formData.aadhaarBack) : null,
+                        aadhaarBackName: formData.aadhaarBack?.name || null,
+                        aadhaarBackType: formData.aadhaarBack?.type || null,
+                        panFrontBase64: formData.panFront ? await fileToBase64(formData.panFront) : null,
+                        panFrontName: formData.panFront?.name || null,
+                        panFrontType: formData.panFront?.type || null,
+                    };
+                    sessionStorage.setItem('technicianRegistrationData', JSON.stringify(dataToStore));
+                    router.push('/technician-terms-and-conditions?fromRegistration=true');
+                    return;
+                } catch (error) {
+                    console.error('Error storing form data:', error);
+                    alert('Error processing documents. Please try again.');
+                    return;
+                }
+            }
             setCurrentStep(prev => prev + 1);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -164,50 +212,95 @@ export default function ElectricianRegistrationPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // Get location
+    // Get location with improved reliability
     const [isGettingLocation, setIsGettingLocation] = useState(false);
+    const [locationError, setLocationError] = useState('');
 
     const handleGetLocation = () => {
         if ('geolocation' in navigator) {
             setIsGettingLocation(true);
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    const { latitude, longitude } = position.coords;
-                    updateField('lat', latitude);
-                    updateField('lng', longitude);
+            setLocationError('');
 
-                    // Reverse geocode to get address
-                    try {
-                        const response = await fetch(
-                            `/api/reverse-geocode?lat=${latitude}&lng=${longitude}`
-                        );
-                        const data = await response.json();
+            // First try with high accuracy
+            const highAccuracyOptions = {
+                enableHighAccuracy: true,
+                timeout: 10000, // 10 second timeout
+                maximumAge: 60000 // Accept cached position up to 1 minute old
+            };
 
-                        if (data.success && data.address) {
-                            const addr = data.address;
+            // Fallback to lower accuracy if high accuracy fails
+            const lowAccuracyOptions = {
+                enableHighAccuracy: false,
+                timeout: 15000, // 15 second timeout
+                maximumAge: 300000 // Accept cached position up to 5 minutes old
+            };
 
-                            // Auto-fill address fields
-                            if (addr.area) updateField('area', addr.area);
-                            if (addr.city) updateField('city', addr.city);
-                            if (addr.district) updateField('district', addr.district);
-                            if (addr.state) updateField('state', addr.state);
-                            if (addr.pincode) updateField('pincode', addr.pincode);
-                        }
-                    } catch (error) {
-                        console.log('Could not reverse geocode', error);
-                    } finally {
-                        setIsGettingLocation(false);
+            const onSuccess = async (position: GeolocationPosition) => {
+                const { latitude, longitude } = position.coords;
+                updateField('lat', latitude);
+                updateField('lng', longitude);
+
+                // Reverse geocode to get address
+                try {
+                    const response = await fetch(
+                        `/api/reverse-geocode?lat=${latitude}&lng=${longitude}`
+                    );
+                    const data = await response.json();
+
+                    if (data.success && data.address) {
+                        const addr = data.address;
+
+                        // Auto-fill address fields
+                        if (addr.area) updateField('area', addr.area);
+                        if (addr.city) updateField('city', addr.city);
+                        if (addr.district) updateField('district', addr.district);
+                        if (addr.state) updateField('state', addr.state);
+                        if (addr.pincode) updateField('pincode', addr.pincode);
                     }
-                },
-                (error) => {
-                    console.log('Location error:', error);
+                } catch (error) {
+                    console.log('Could not reverse geocode', error);
+                } finally {
                     setIsGettingLocation(false);
-                    alert('Could not get location. Please enter address manually.');
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
+                }
+            };
+
+            const onHighAccuracyError = (error: GeolocationPositionError) => {
+                console.warn('High accuracy location failed, trying low accuracy...', error);
+                // Try again with lower accuracy as fallback
+                navigator.geolocation.getCurrentPosition(
+                    onSuccess,
+                    onFinalError,
+                    lowAccuracyOptions
+                );
+            };
+
+            const onFinalError = (error: GeolocationPositionError) => {
+                console.error('Location error:', error);
+                setIsGettingLocation(false);
+
+                // Provide more specific error messages
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        setLocationError('Location permission denied. Please enable location access in your browser settings.');
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        setLocationError('Location unavailable. Please check your GPS/network connection.');
+                        break;
+                    case error.TIMEOUT:
+                        setLocationError('Location request timed out. Please try again.');
+                        break;
+                    default:
+                        setLocationError('Could not get location. Please enter address manually.');
+                }
+            };
+
+            navigator.geolocation.getCurrentPosition(
+                onSuccess,
+                onHighAccuracyError,
+                highAccuracyOptions
             );
         } else {
-            alert('Geolocation is not supported by your browser.');
+            setLocationError('Geolocation is not supported by your browser.');
         }
     };
 
@@ -424,6 +517,12 @@ export default function ElectricianRegistrationPage() {
                                 </p>
                             )}
 
+                            {locationError && (
+                                <p className="text-sm text-red-500 text-center mb-4">
+                                    {locationError}
+                                </p>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                                 <Input
                                     label="House/Shop No."
@@ -527,50 +626,6 @@ export default function ElectricianRegistrationPage() {
                         </div>
                     )}
 
-                    {/* Step 4: Bank Details */}
-                    {currentStep === 3 && (
-                        <div className="space-y-6 animate-slide-up">
-                            <div>
-                                <h2 className="text-2xl font-bold text-gray-900 mb-2">Bank Details</h2>
-                                <p className="text-gray-500">For receiving payments after successful services</p>
-                            </div>
-
-                            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-                                <p className="text-sm text-blue-800">
-                                    <span className="font-bold">Note:</span> Bank details are required for receiving service payments. Make sure details match your bank records.
-                                </p>
-                            </div>
-
-                            <Input
-                                label="Account Holder Name"
-                                value={formData.bankAccountName}
-                                onChange={(e) => updateField('bankAccountName', e.target.value)}
-                                error={errors.bankAccountName}
-                                success={!!(touched.bankAccountName && !errors.bankAccountName && formData.bankAccountName.length > 2)}
-                                helpText="Name as per bank records"
-                            />
-
-                            <Input
-                                label="Bank Account Number"
-                                type="text"
-                                value={formData.bankAccountNumber}
-                                onChange={(e) => updateField('bankAccountNumber', e.target.value.replace(/\D/g, '').slice(0, 18))}
-                                error={errors.bankAccountNumber}
-                                success={!!(touched.bankAccountNumber && !errors.bankAccountNumber && /^\d{9,18}$/.test(formData.bankAccountNumber))}
-                                helpText="9-18 digit account number"
-                            />
-
-                            <Input
-                                label="IFSC Code"
-                                value={formData.bankIfscCode}
-                                onChange={(e) => updateField('bankIfscCode', e.target.value.toUpperCase().slice(0, 11))}
-                                error={errors.bankIfscCode}
-                                success={!!(touched.bankIfscCode && !errors.bankIfscCode && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.bankIfscCode))}
-                                helpText="11-character IFSC code (e.g., SBIN0001234)"
-                            />
-                        </div>
-                    )}
-
                     {/* Navigation Buttons */}
                     <div className="flex gap-4 mt-8 pt-6 border-t border-gray-100">
                         {currentStep > 0 && (
@@ -579,19 +634,9 @@ export default function ElectricianRegistrationPage() {
                             </Button>
                         )}
 
-                        {currentStep < STEPS.length - 1 ? (
-                            <Button onClick={handleNext} className="flex-1">
-                                Continue →
-                            </Button>
-                        ) : (
-                            <Button
-                                onClick={handleSubmit}
-                                loading={isSubmitting}
-                                className="flex-1"
-                            >
-                                Submit Application
-                            </Button>
-                        )}
+                        <Button onClick={handleNext} className="flex-1">
+                            {currentStep === 2 ? 'Continue to Terms & Conditions →' : 'Continue →'}
+                        </Button>
                     </div>
                 </Card>
 

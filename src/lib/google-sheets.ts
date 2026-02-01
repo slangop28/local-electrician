@@ -99,3 +99,74 @@ export async function testSheetsConnection(): Promise<{ success: boolean; messag
         };
     }
 }
+// Delete a row from a specific sheet tab
+export async function deleteRow(tabName: string, rowNumber: number) {
+    const sheets = getSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+    // 1. Get sheet ID
+    const metadata = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = metadata.data.sheets?.find(s => s.properties?.title === tabName);
+
+    if (sheet?.properties?.sheetId === undefined) {
+        throw new Error(`Sheet ${tabName} not found`);
+    }
+
+    const sheetId = sheet.properties.sheetId;
+
+    // 2. Delete the row (rowNumber is 1-indexed)
+    // startIndex is 0-indexed inclusive, endIndex is 0-indexed exclusive
+    // To delete row 5 (1-indexed), we delete index 4.
+    const response = await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+            requests: [{
+                deleteDimension: {
+                    range: {
+                        sheetId,
+                        dimension: 'ROWS',
+                        startIndex: rowNumber - 1,
+                        endIndex: rowNumber,
+                    },
+                },
+            }],
+        },
+    });
+
+    return response.data;
+}
+
+// Ensure a sheet exists, create it if not
+export async function ensureSheet(tabName: string) {
+    const sheets = getSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+    try {
+        const metadata = await sheets.spreadsheets.get({ spreadsheetId });
+        const sheet = metadata.data.sheets?.find(s => s.properties?.title === tabName);
+
+        if (!sheet) {
+            console.log(`Sheet ${tabName} not found, creating...`);
+            await sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                requestBody: {
+                    requests: [{
+                        addSheet: {
+                            properties: {
+                                title: tabName,
+                            }
+                        }
+                    }]
+                }
+            });
+
+            // Add headers if it's BANK_DETAILS
+            if (tabName === SHEET_TABS.BANK_DETAILS) {
+                await appendRow(tabName, ['Timestamp', 'ElectricianId', 'AccountName', 'AccountNumber', 'IFSCCode', 'Status']);
+            }
+        }
+    } catch (error) {
+        console.error(`Error ensuring sheet ${tabName}:`, error);
+        // Don't throw, let the caller try and fail if needed
+    }
+}

@@ -125,11 +125,15 @@ export default function OTPLoginModal({
         resetForm();
         onClose();
 
-        // If electrician and new or not verified, redirect to registration
-        if (userType === 'electrician' && (!data.user.isElectrician || data.user.electricianStatus === 'PENDING')) {
-          window.location.href = '/electrician';
-        } else if (userType === 'electrician' && data.user.electricianStatus === 'VERIFIED') {
+        // Check if user is a registered electrician (regardless of selected userType)
+        // This ensures returning technicians are always redirected to their dashboard
+        if (data.user.isElectrician && data.user.electricianStatus === 'VERIFIED') {
           window.location.href = '/electrician-dashboard';
+        } else if (data.user.isElectrician && data.user.electricianStatus === 'PENDING') {
+          window.location.href = '/electrician-pending';
+        } else if (userType === 'electrician' && !data.user.isElectrician) {
+          // New electrician who hasn't registered yet
+          window.location.href = '/electrician';
         } else {
           onLoginSuccess?.();
         }
@@ -170,10 +174,15 @@ export default function OTPLoginModal({
         resetForm();
         onClose();
 
-        if (userType === 'electrician' && !data.user.isElectrician) {
-          window.location.href = '/electrician';
-        } else if (userType === 'electrician' && data.user.electricianStatus === 'VERIFIED') {
+        // Check if user is a registered electrician (regardless of selected userType)
+        // This ensures returning technicians are always redirected to their dashboard
+        if (data.user.isElectrician && data.user.electricianStatus === 'VERIFIED') {
           window.location.href = '/electrician-dashboard';
+        } else if (data.user.isElectrician && data.user.electricianStatus === 'PENDING') {
+          window.location.href = '/electrician-pending';
+        } else if (userType === 'electrician' && !data.user.isElectrician) {
+          // New electrician who hasn't registered yet
+          window.location.href = '/electrician';
         } else {
           onLoginSuccess?.();
         }
