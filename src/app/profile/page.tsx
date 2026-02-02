@@ -90,6 +90,40 @@ export default function ProfilePage() {
         }
     };
 
+    // Submit Review
+    const handleReviewSubmit = async (rating: number, comment: string) => {
+        if (!reviewRequest) return;
+
+        setIsSubmittingReview(true);
+        try {
+            const response = await fetch('/api/request/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    requestId: reviewRequest.requestId,
+                    rating,
+                    comment
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setShowReviewModal(false);
+                // Refresh history
+                fetchServiceHistory();
+                alert('Thank you for your review!');
+            } else {
+                alert(data.error || 'Failed to submit review');
+            }
+        } catch (error) {
+            console.error('Review submit error:', error);
+            alert('Failed to submit review');
+        } finally {
+            setIsSubmittingReview(false);
+        }
+    };
+
     // Redirect if not authenticated
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
@@ -276,7 +310,8 @@ export default function ProfilePage() {
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{request.serviceType}</h3>
-                                            <p className="text-sm text-gray-500">{request.requestId}</p>
+                                            <p className="text-sm text-gray-500">Electrician: {request.electricianName || request.electricianId}</p>
+                                            <p className="text-xs text-gray-400">ID: {request.requestId}</p>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
                                             {request.status}

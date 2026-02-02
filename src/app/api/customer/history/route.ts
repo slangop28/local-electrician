@@ -43,27 +43,26 @@ export async function GET(request: NextRequest) {
         const completedAtIndex = serviceHeaders.indexOf('CompletedAt');
         const oneHourAgo = Date.now() - (60 * 60 * 1000);
 
+        // Fetch Electricians to map IDs to Names
+        const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
+        const electricianMap = new Map<string, string>();
+        if (electricianRows.length > 1) {
+            const headers = electricianRows[0];
+            const idIndex = headers.indexOf('ElectricianID');
+            const nameIndex = headers.indexOf('Name');
+            if (idIndex !== -1 && nameIndex !== -1) {
+                electricianRows.slice(1).forEach(row => {
+                    if (row[idIndex]) electricianMap.set(row[idIndex], row[nameIndex] || 'Unknown');
+                });
+            }
+        }
+
         for (let i = 1; i < serviceRows.length; i++) {
             const row = serviceRows[i];
             if (row[serviceHeaders.indexOf('CustomerID')] === customerId) {
-                requests.push({
-                    requestId: row[serviceHeaders.indexOf('RequestID')],
-                    electricianId: row[serviceHeaders.indexOf('ElectricianID')],
-                    serviceType: row[serviceHeaders.indexOf('ServiceType')],
-                    status: row[serviceHeaders.indexOf('Status')],
-                    preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
-                    preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
-                    // Filter out completed requests older than 1 hour
-                    if(row[serviceHeaders.indexOf('Status')] === 'SUCCESS') {
+                // Filter out completed requests older than 1 hour
+                if (row[serviceHeaders.indexOf('Status')] === 'SUCCESS') {
                     const completedAt = completedAtIndex !== -1 ? row[completedAtIndex] : null;
-                    // If no timestamp, maybe assume it's old? Or keep it? 
-                    // User said "1 hr after payment and completion". 
-                    // Let's assume if no timestamp, it's very old or just migrated. 
-                    // For now, if no timestamp, we'll hide it if it's SUCCESS to be safe, or show it? 
-                    // Let's show it if NO timestamp (legacy), but filter if timestamp exists. 
-                    // Actually, if we just implemented this, old requests won't have it.
-                    // Better to hide if we can't verify. But that might hide all history. 
-                    // Let's filter ONLY if we have a timestamp and it's old.
 
                     if (completedAt) {
                         const completedTime = new Date(completedAt).getTime();
@@ -76,6 +75,7 @@ export async function GET(request: NextRequest) {
                 requests.push({
                     requestId: row[serviceHeaders.indexOf('RequestID')],
                     electricianId: row[serviceHeaders.indexOf('ElectricianID')],
+                    electricianName: electricianMap.get(row[serviceHeaders.indexOf('ElectricianID')]) || row[serviceHeaders.indexOf('ElectricianID')],
                     serviceType: row[serviceHeaders.indexOf('ServiceType')],
                     status: row[serviceHeaders.indexOf('Status')],
                     preferredDate: row[serviceHeaders.indexOf('PreferredDate')],

@@ -30,6 +30,8 @@ interface ServiceRequest {
     id: string;
     customerId: string;
     electricianId: string;
+    customerName?: string;
+    electricianName?: string;
     serviceType: string;
     urgency: string;
     status: string;
@@ -754,7 +756,9 @@ export default function AdminPanel() {
                                                     🔧 {req.serviceType}
                                                 </p>
                                                 <p className="text-xs text-gray-400 mt-1">
-                                                    Customer: {req.customerId} → Electrician: {req.electricianId}
+                                                    Customer: <span className="font-semibold text-gray-700">{req.customerName || req.customerId}</span>
+                                                    <span className="mx-2">→</span>
+                                                    Electrician: <span className="font-semibold text-gray-700">{req.electricianName || req.electricianId}</span>
                                                 </p>
                                             </div>
 
