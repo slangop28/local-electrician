@@ -8,7 +8,12 @@ import { Button, Card } from '@/components/ui';
 
 export default function ElectricianPendingPage() {
     const router = useRouter();
-    const { userProfile, isAuthenticated, isLoading } = useAuth();
+    const { userProfile, isAuthenticated, isLoading, logout } = useAuth();
+
+    const handleLogout = async () => {
+        await logout();
+        router.push('/');
+    };
 
     // Redirect if not authenticated
     useEffect(() => {
@@ -41,9 +46,17 @@ export default function ElectricianPendingPage() {
                         <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg flex items-center justify-center">
                             <span className="text-white text-sm">⚡</span>
                         </div>
-                        <span className="font-bold text-white">Local Electrician</span>
+                        <span className="font-bold text-white hidden sm:block">Local Electrician</span>
                     </Link>
-                    <span className="text-sm text-cyan-400">Electrician Profile</span>
+                    <div className="flex items-center gap-4">
+                        <span className="text-sm text-cyan-400 hidden md:block">Electrician Profile</span>
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all text-sm font-semibold"
+                        >
+                            <span>Log Out</span>
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -128,10 +141,19 @@ export default function ElectricianPendingPage() {
                         )}
 
                         <Link href="/">
-                            <Button fullWidth className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700">
+                            <Button fullWidth className="bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 mb-3">
                                 ← Return to Home
                             </Button>
                         </Link>
+
+                        <Button
+                            fullWidth
+                            variant="outline"
+                            onClick={handleLogout}
+                            className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                        >
+                            Log Out
+                        </Button>
                     </div>
                 </Card>
 

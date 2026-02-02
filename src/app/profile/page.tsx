@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, ReviewModal } from '@/components/ui';
 
 interface ServiceRequest {
     requestId: string;
@@ -14,14 +14,36 @@ interface ServiceRequest {
     preferredDate: string;
     preferredSlot: string;
     timestamp: string;
+    rating?: number;
+    electricianName?: string;
 }
 
 export default function ProfilePage() {
     const router = useRouter();
-    const { userProfile, isAuthenticated, isLoading } = useAuth();
-    const [activeTab, setActiveTab] = useState<'profile' | 'history'>('profile');
+    const { userProfile, isAuthenticated, isLoading, login, logout } = useAuth();
+    const [activeTab, setActiveTab] = useState<'profile' | 'history' | 'address'>('profile');
+
+    const handleLogout = async () => {
+        await logout();
+        router.push('/');
+    };
     const [serviceHistory, setServiceHistory] = useState<ServiceRequest[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+
+    // Address Editing State
+    const [isEditingAddress, setIsEditingAddress] = useState(false);
+    const [addressForm, setAddressForm] = useState({
+        address: '',
+        city: '',
+        pincode: ''
+    });
+
+    const [isSavingAddress, setIsSavingAddress] = useState(false);
+
+    // Review State
+    const [showReviewModal, setShowReviewModal] = useState(false);
+    const [reviewRequest, setReviewRequest] = useState<ServiceRequest | null>(null);
+    const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
     // Set active tab from URL params (client-side only)
     useEffect(() => {
@@ -50,6 +72,16 @@ export default function ProfilePage() {
             const data = await response.json();
             if (data.success) {
                 setServiceHistory(data.requests || []);
+
+                // Check if there's a recent completed request without a rating
+                const unreviewed = (data.requests || []).find(
+                    (r: ServiceRequest) => r.status === 'SUCCESS' && !r.rating
+                );
+
+                if (unreviewed) {
+                    setReviewRequest(unreviewed);
+                    setShowReviewModal(true);
+                }
             }
         } catch (error) {
             console.error('Failed to fetch service history:', error);
@@ -96,7 +128,15 @@ export default function ProfilePage() {
                         </div>
                         <span className="font-bold text-gray-900">Local Electrician</span>
                     </Link>
-                    <span className="text-sm text-gray-500">My Profile</span>
+                    <div className="flex items-center gap-4">
+                        <span className="text-sm text-gray-500 hidden sm:block">My Profile</span>
+                        <button
+                            onClick={handleLogout}
+                            className="text-sm text-red-500 font-medium hover:text-red-700 transition-colors"
+                        >
+                            Logout
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -117,21 +157,38 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex gap-2 mb-6">
+                <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
                     <button
                         onClick={() => setActiveTab('profile')}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'profile'
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'profile'
                             ? 'bg-cyan-600 text-white'
                             : 'bg-white text-gray-600 hover:bg-gray-100'
                             }`}
                     >
                         Profile Details
                     </button>
+                    <button
+                        onClick={() => {
+                            setActiveTab('address');
+                            if (userProfile) {
+                                setAddressForm({
+                                    address: userProfile.address || '',
+                                    city: userProfile.city || '',
+                                    pincode: userProfile.pincode || ''
+                                });
+                            }
+                        }}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'address'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100'
+                            }`}
+                    >
+                        My Address
+                    </button>
                     {userProfile.userType === 'customer' && (
                         <button
                             onClick={() => setActiveTab('history')}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'history'
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'history'
                                 ? 'bg-cyan-600 text-white'
                                 : 'bg-white text-gray-600 hover:bg-gray-100'
                                 }`}
@@ -177,10 +234,18 @@ export default function ProfilePage() {
                             </div>
                         </div>
 
-                        <div className="mt-8">
+                        <div className="mt-8 space-y-3">
                             <Link href="/">
                                 <Button fullWidth>← Back to Home</Button>
                             </Link>
+                            <Button
+                                fullWidth
+                                variant="outline"
+                                onClick={handleLogout}
+                                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                            >
+                                Log Out
+                            </Button>
                         </div>
                     </Card>
                 )}
@@ -226,7 +291,139 @@ export default function ProfilePage() {
                         )}
                     </div>
                 )}
+                {/* Address Tab */}
+                {activeTab === 'address' && (
+                    <Card variant="elevated" padding="lg">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-900">Address Details</h2>
+                            {!isEditingAddress ? (
+                                <Button size="sm" onClick={() => setIsEditingAddress(true)}>
+                                    ✎ Edit Address
+                                </Button>
+                            ) : (
+                                <Button size="sm" variant="outline" onClick={() => setIsEditingAddress(false)}>
+                                    Cancel
+                                </Button>
+                            )}
+                        </div>
+
+                        {isEditingAddress ? (
+                            <form
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    setIsSavingAddress(true);
+                                    try {
+                                        const response = await fetch('/api/customer/profile', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                phone: userProfile.phone,
+                                                name: userProfile.name,
+                                                email: userProfile.email,
+                                                city: addressForm.city,
+                                                pincode: addressForm.pincode,
+                                                address: addressForm.address
+                                            })
+                                        });
+
+                                        const data = await response.json();
+                                        if (data.success) {
+                                            // Update local profile context
+                                            const updatedProfile = {
+                                                ...userProfile,
+                                                address: addressForm.address,
+                                                city: addressForm.city,
+                                                pincode: addressForm.pincode
+                                            };
+                                            login(updatedProfile); // Helper to update context
+                                            setIsEditingAddress(false);
+                                            alert('Address updated successfully!');
+                                        } else {
+                                            alert(data.error || 'Failed to update address');
+                                        }
+                                    } catch (error) {
+                                        console.error('Update error:', error);
+                                        alert('Failed to update address');
+                                    } finally {
+                                        setIsSavingAddress(false);
+                                    }
+                                }}
+                                className="space-y-4"
+                            >
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Address</label>
+                                    <textarea
+                                        value={addressForm.address}
+                                        onChange={(e) => setAddressForm({ ...addressForm, address: e.target.value })}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900"
+                                        rows={3}
+                                        placeholder="Enter your house no, street, area..."
+                                        required
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                                        <input
+                                            type="text"
+                                            value={addressForm.city}
+                                            onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900"
+                                            placeholder="Enter city"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Pincode</label>
+                                        <input
+                                            type="text"
+                                            value={addressForm.pincode}
+                                            onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 text-gray-900"
+                                            placeholder="Enter pincode"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+                                <div className="pt-4">
+                                    <Button type="submit" fullWidth disabled={isSavingAddress}>
+                                        {isSavingAddress ? 'Saving...' : 'Save Address'}
+                                    </Button>
+                                </div>
+                            </form>
+                        ) : (
+                            <div className="space-y-4 text-gray-600">
+                                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                    <p className="text-sm text-gray-500 mb-1">Address</p>
+                                    <p className="text-gray-900 font-medium whitespace-pre-wrap">{userProfile.address || 'Not provided'}</p>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                        <p className="text-sm text-gray-500 mb-1">City</p>
+                                        <p className="text-gray-900 font-medium">{userProfile.city || 'Not provided'}</p>
+                                    </div>
+                                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                        <p className="text-sm text-gray-500 mb-1">Pincode</p>
+                                        <p className="text-gray-900 font-medium">{userProfile.pincode || 'Not provided'}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </Card>
+                )}
             </div>
+
+            {/* Review Modal */}
+            {reviewRequest && (
+                <ReviewModal
+                    isOpen={showReviewModal}
+                    onClose={() => setShowReviewModal(false)}
+                    onSubmit={handleReviewSubmit}
+                    isSubmitting={isSubmittingReview}
+                    serviceType={reviewRequest.serviceType}
+                    electricianName={reviewRequest.electricianName || 'the electrician'}
+                />
+            )}
         </main>
     );
 }

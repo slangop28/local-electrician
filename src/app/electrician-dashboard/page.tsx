@@ -20,7 +20,8 @@ interface ElectricianData {
     referralCode: string;
     totalReferrals: number;
     servicesCompleted: number;
-    rating?: number;
+    rating?: number | string;
+    totalReviews?: number;
     joinedDate?: string;
     bankDetails?: {
         accountName: string;
@@ -34,6 +35,8 @@ interface ServiceRequest {
     requestId: string;
     customerName: string;
     customerPhone: string;
+    customerAddress?: string;
+    customerCity?: string;
     serviceType: string;
     status: string;
     preferredDate: string;
@@ -357,6 +360,15 @@ export default function ElectricianDashboard() {
                                 <p className="text-sm text-blue-200/70">Services Completed</p>
                             </div>
 
+                            <div className="bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 rounded-2xl p-6 border border-yellow-500/20">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-3xl">⭐</span>
+                                    <span className="text-xs text-yellow-300 bg-yellow-500/20 px-2 py-1 rounded-full">Rating</span>
+                                </div>
+                                <p className="text-4xl font-bold text-white mb-1">{electricianData.rating || 'New'}</p>
+                                <p className="text-sm text-yellow-200/70">{electricianData.totalReviews || 0} Reviews</p>
+                            </div>
+
                             <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 rounded-2xl p-6 border border-emerald-500/20">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-3xl">🏦</span>
@@ -552,14 +564,29 @@ export default function ElectricianDashboard() {
                                                     {(service.status === 'ACCEPTED' || service.status === 'SUCCESS') && (
                                                         <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
                                                             <p className="text-xs text-emerald-300/70 mb-1">Customer Contact</p>
-                                                            <div className="flex items-center gap-4">
-                                                                <p className="text-white font-medium">👤 {service.customerName}</p>
-                                                                <a
-                                                                    href={`tel:${service.customerPhone}`}
-                                                                    className="flex items-center gap-1 px-3 py-1 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors"
-                                                                >
-                                                                    📞 {service.customerPhone}
-                                                                </a>
+                                                            <div className="flex items-start gap-4 flex-col">
+                                                                <div className="flex items-center gap-4 w-full justify-between">
+                                                                    <p className="text-white font-medium flex items-center gap-2">
+                                                                        <span>👤</span> {service.customerName}
+                                                                    </p>
+                                                                    <a
+                                                                        href={`tel:${service.customerPhone}`}
+                                                                        className="flex items-center gap-1 px-3 py-1 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors"
+                                                                    >
+                                                                        📞 {service.customerPhone}
+                                                                    </a>
+                                                                </div>
+                                                                {service.customerAddress && (
+                                                                    <div className="w-full text-sm text-gray-300 bg-black/20 p-3 rounded-lg border border-white/5">
+                                                                        <p className="flex items-start gap-2">
+                                                                            <span className="mt-0.5">📍</span>
+                                                                            <span>
+                                                                                {service.customerAddress}
+                                                                                {service.customerCity && `, ${service.customerCity}`}
+                                                                            </span>
+                                                                        </p>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     )}
@@ -748,6 +775,19 @@ export default function ElectricianDashboard() {
                                     🎁 {electricianData.totalReferrals} Referrals
                                 </span>
                             </div>
+                        </div>
+
+                        {/* Logout Button */}
+                        <div className="md:col-span-2">
+                            <Button
+                                fullWidth
+                                variant="outline"
+                                onClick={handleLogout}
+                                className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 py-4 flex items-center justify-center gap-2"
+                            >
+                                <span>🚪</span>
+                                Log Out
+                            </Button>
                         </div>
                     </div>
                 )}

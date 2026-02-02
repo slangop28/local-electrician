@@ -141,11 +141,9 @@ export default function ElectricianRegistrationPage() {
         }
 
         if (step === 3) {
-            if (!formData.bankAccountName.trim()) newErrors.bankAccountName = 'Account holder name is required';
-            if (!formData.bankAccountNumber.trim()) newErrors.bankAccountNumber = 'Account number is required';
-            else if (!/^\d{9,18}$/.test(formData.bankAccountNumber)) newErrors.bankAccountNumber = 'Enter valid account number (9-18 digits)';
-            if (!formData.bankIfscCode.trim()) newErrors.bankIfscCode = 'IFSC code is required';
-            else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(formData.bankIfscCode.toUpperCase())) newErrors.bankIfscCode = 'Enter valid IFSC code';
+            // Bank Details are now optional as per user request
+            // Validation removed. User can skip freely.
+            return true;
         }
 
         setErrors(newErrors);

@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { SERVICE_TYPES, URGENCY_LEVELS, TIME_SLOTS, cn } from '@/lib/utils';
+import { reverseGeocode } from '@/lib/geocoding';
 
 interface ElectricianInfo {
     id: string;
     name: string;
     city: string;
+
     area: string;
+    rating?: string | number;
+    totalReviews?: number;
 }
 
 export default function ServiceRequestPage({
@@ -35,6 +39,10 @@ export default function ServiceRequestPage({
     const [issueDetail, setIssueDetail] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
+    const [address, setAddress] = useState('');
+    const [city, setCity] = useState('');
+    const [pincode, setPincode] = useState('');
+    const [detectingLocation, setDetectingLocation] = useState(false);
 
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -74,6 +82,9 @@ export default function ServiceRequestPage({
         if (!customerPhone || customerPhone.length !== 10) {
             newErrors.customerPhone = 'Enter valid 10-digit phone';
         }
+        if (!address.trim()) newErrors.address = 'Address is required';
+        if (!city.trim()) newErrors.city = 'City is required';
+        if (!pincode.trim()) newErrors.pincode = 'Pincode is required';
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -98,6 +109,9 @@ export default function ServiceRequestPage({
                     issueDetail,
                     customerName,
                     customerPhone,
+                    address,
+                    city,
+                    pincode,
                 }),
             });
 
@@ -115,6 +129,50 @@ export default function ServiceRequestPage({
         } finally {
             setSubmitting(false);
         }
+    };
+
+    const handleAutoDetect = () => {
+        if (!navigator.geolocation) {
+            alert('Geolocation is not supported by your browser');
+            return;
+        }
+
+        setDetectingLocation(true);
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                try {
+                    const { latitude, longitude } = position.coords;
+                    const addressStr = await reverseGeocode(latitude, longitude);
+                    if (addressStr) {
+                        setAddress(addressStr);
+                        // Try to parse city/pincode from address (simple heuristic)
+                        // In a real app we'd get structured data from geocoding
+                        // For now, let user fill details, just fill main address
+
+                        // Extract pincode (6 digits)
+                        const pinMatch = addressStr.match(/\b\d{6}\b/);
+                        if (pinMatch) setPincode(pinMatch[0]);
+
+                        // Heuristic for city - usually before state/country/pincode
+                        // This is weak, but better than nothing
+                        const parts = addressStr.split(',').map(p => p.trim());
+                        if (parts.length > 3) {
+                            setCity(parts[parts.length - 3]);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Geocoding failed:', error);
+                    alert('Could not detect address. Please enter manually.');
+                } finally {
+                    setDetectingLocation(false);
+                }
+            },
+            (error) => {
+                console.error('Geolocation error:', error);
+                alert('Location access denied or failed.');
+                setDetectingLocation(false);
+            }
+        );
     };
 
     // Success screen
@@ -195,9 +253,16 @@ export default function ServiceRequestPage({
                             <div>
                                 <h2 className="font-bold text-lg text-gray-900">{electrician.name}</h2>
                                 <p className="text-gray-500">{electrician.area}, {electrician.city}</p>
-                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                                    ✓ Verified
-                                </span>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                        ✓ Verified
+                                    </span>
+                                    {electrician.rating && (
+                                        <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                                            <span>⭐</span> {electrician.rating} ({electrician.totalReviews || 0} reviews)
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </Card>
@@ -311,6 +376,57 @@ export default function ServiceRequestPage({
                             rows={3}
                             className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 resize-none text-gray-900 placeholder:text-gray-400"
                         />
+                    </div>
+
+                    {/* Address Details */}
+                    <div className="border-t border-gray-100 pt-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-900">Address Details</h3>
+                            <button
+                                type="button"
+                                onClick={handleAutoDetect}
+                                disabled={detectingLocation}
+                                className="text-sm text-blue-600 font-medium flex items-center gap-1 hover:text-blue-700"
+                            >
+                                {detectingLocation ? (
+                                    <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
+                                ) : (
+                                    <span>📍</span>
+                                )}
+                                Auto Detect Location
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                                <textarea
+                                    value={address}
+                                    onChange={(e) => setAddress(e.target.value)}
+                                    placeholder="House No, Street, Area..."
+                                    rows={2}
+                                    className={`w-full px-4 py-3 bg-gray-50 border-2 rounded-xl focus:outline-none resize-none text-gray-900 placeholder:text-gray-400 ${errors.address ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-blue-500'
+                                        }`}
+                                />
+                                {errors.address && <p className="text-sm text-red-500 mt-1">{errors.address}</p>}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input
+                                    label="City"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    error={errors.city}
+                                />
+                                <Input
+                                    label="Pincode"
+                                    value={pincode}
+                                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    error={errors.pincode}
+                                    type="tel"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     {/* Customer Details */}

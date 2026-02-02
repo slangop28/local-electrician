@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, SHEET_TABS, ensureSheet } from '@/lib/google-sheets';
 
+interface CustomerMap {
+    [key: string]: {
+        name: string;
+        phone: string;
+        address: string;
+        city: string;
+        pincode: string;
+    }
+}
+
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
@@ -54,33 +64,82 @@ export async function GET(request: NextRequest) {
         const serviceRows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
         const serviceHeaders = serviceRows[0] || [];
 
+        // Get customers to map names and addresses
+        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
+        const customerHeaders = customerRows[0] || [];
+        const customerMap: CustomerMap = {};
+
+        for (let i = 1; i < customerRows.length; i++) {
+            const row = customerRows[i];
+            const custId = row[customerHeaders.indexOf('CustomerID')];
+            if (custId) {
+                customerMap[custId] = {
+                    name: row[customerHeaders.indexOf('Name')],
+                    phone: row[customerHeaders.indexOf('Phone')],
+                    address: row[customerHeaders.indexOf('Address')] || '',
+                    city: row[customerHeaders.indexOf('City')] || '',
+                    pincode: row[customerHeaders.indexOf('Pincode')] || ''
+                };
+            }
+        }
+
         const services = [];
-        let completedCount = 0;
+        let stats = { completed: 0 };
+
+        // Check if Rating column exists
+        const ratingIndex = serviceHeaders.indexOf('Rating');
+        const completedAtIndex = serviceHeaders.indexOf('CompletedAt');
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+
+        let totalRating = 0;
+        let ratingCount = 0;
 
         for (let i = 1; i < serviceRows.length; i++) {
             const row = serviceRows[i];
             if (row[serviceHeaders.indexOf('ElectricianID')] === electricianId) {
                 const status = row[serviceHeaders.indexOf('Status')];
-                if (status === 'SUCCESS') {
-                    completedCount++;
+
+                // Calculate stats
+                if (status === 'SUCCESS') stats.completed++;
+
+                // Calculate Rating
+                if (ratingIndex !== -1 && row[ratingIndex]) {
+                    const r = parseFloat(row[ratingIndex]);
+                    if (!isNaN(r) && r > 0) {
+                        totalRating += r;
+                        ratingCount++;
+                    }
                 }
 
-                services.push({
-                    requestId: row[serviceHeaders.indexOf('RequestID')],
-                    customerName: row[serviceHeaders.indexOf('CustomerID')], // We could look up customer name
-                    serviceType: row[serviceHeaders.indexOf('ServiceType')],
-                    status: status,
-                    preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
-                    preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
-                    timestamp: row[serviceHeaders.indexOf('Timestamp')]
-                });
+                // Filter out completed requests older than 1 hour for the list
+                let includeInList = true;
+                if (status === 'SUCCESS' && completedAtIndex !== -1 && row[completedAtIndex]) {
+                    const completedTime = new Date(row[completedAtIndex]).getTime();
+                    if (completedTime < oneHourAgo) {
+                        includeInList = false;
+                    }
+                }
+
+                // Start of service mapping logic (same as before)
+                if (includeInList) {
+                    services.push({
+                        requestId: row[serviceHeaders.indexOf('RequestID')],
+                        customerName: customerMap[row[serviceHeaders.indexOf('CustomerID')]]?.name || 'Unknown',
+                        customerPhone: customerMap[row[serviceHeaders.indexOf('CustomerID')]]?.phone || '',
+                        customerAddress: customerMap[row[serviceHeaders.indexOf('CustomerID')]]?.address || '',
+                        customerCity: customerMap[row[serviceHeaders.indexOf('CustomerID')]]?.city || '',
+                        serviceType: row[serviceHeaders.indexOf('ServiceType')],
+                        status: row[serviceHeaders.indexOf('Status')],
+                        preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
+                        preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
+                        timestamp: row[serviceHeaders.indexOf('Timestamp')],
+                        description: row[serviceHeaders.indexOf('IssueDetail')],
+                        rating: row[ratingIndex] ? parseFloat(row[ratingIndex]) : undefined
+                    });
+                }
             }
         }
 
-        // Update services completed count
-        electricianData.servicesCompleted = completedCount;
-
-        // Sort services by timestamp descending
         // Sort services by timestamp descending
         services.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
@@ -109,11 +168,17 @@ export async function GET(request: NextRequest) {
             };
         }
 
+        // Calculate average rating
+        const averageRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : 'New';
+
         return NextResponse.json({
             success: true,
             electrician: {
                 ...electricianData,
-                bankDetails
+                servicesCompleted: stats.completed,
+                rating: averageRating,
+                totalReviews: ratingCount,
+                bankDetails: bankDetails || undefined
             },
             services
         });

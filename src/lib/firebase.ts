@@ -5,6 +5,7 @@ import {
     RecaptchaVerifier,
     signInWithPhoneNumber,
     GoogleAuthProvider,
+    FacebookAuthProvider,
     signInWithPopup,
     signOut,
     onAuthStateChanged,
@@ -30,42 +31,24 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('email');
 googleProvider.addScope('profile');
 
-// Initialize reCAPTCHA verifier for phone auth
-export function initRecaptcha(buttonId: string): RecaptchaVerifier {
-    return new RecaptchaVerifier(auth, buttonId, {
-        size: 'invisible',
-        callback: () => {
-            console.log('reCAPTCHA solved');
-        },
-        'expired-callback': () => {
-            console.log('reCAPTCHA expired');
-        }
-    });
-}
+// Facebook Auth Provider
+const facebookProvider = new FacebookAuthProvider();
 
-// Send OTP to phone number
-export async function sendOTP(
-    phoneNumber: string,
-    recaptchaVerifier: RecaptchaVerifier
-): Promise<ConfirmationResult> {
-    const formattedPhone = phoneNumber.startsWith('+91') ? phoneNumber : `+91${phoneNumber}`;
-    return signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
-}
 
-// Verify OTP
-export async function verifyOTP(
-    confirmationResult: ConfirmationResult,
-    otp: string
-): Promise<User> {
-    const result = await confirmationResult.confirm(otp);
-    return result.user;
-}
 
 // Google Sign In
 export async function signInWithGoogle(): Promise<User> {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
 }
+
+// Facebook Sign In
+export async function signInWithFacebook(): Promise<User> {
+    const result = await signInWithPopup(auth, facebookProvider);
+    return result.user;
+}
+
+
 
 // Sign Out
 export async function logOut(): Promise<void> {

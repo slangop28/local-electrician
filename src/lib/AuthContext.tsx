@@ -14,6 +14,9 @@ export interface UserProfile {
     isElectrician: boolean;
     electricianStatus?: 'PENDING' | 'VERIFIED' | 'REJECTED';
     electricianId?: string;
+    address?: string;
+    city?: string;
+    pincode?: string;
 }
 
 interface AuthContextType {

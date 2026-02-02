@@ -40,6 +40,9 @@ export async function GET(request: NextRequest) {
         const serviceHeaders = serviceRows[0] || [];
 
         const requests = [];
+        const completedAtIndex = serviceHeaders.indexOf('CompletedAt');
+        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+
         for (let i = 1; i < serviceRows.length; i++) {
             const row = serviceRows[i];
             if (row[serviceHeaders.indexOf('CustomerID')] === customerId) {
@@ -50,7 +53,35 @@ export async function GET(request: NextRequest) {
                     status: row[serviceHeaders.indexOf('Status')],
                     preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
                     preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
-                    timestamp: row[serviceHeaders.indexOf('Timestamp')]
+                    // Filter out completed requests older than 1 hour
+                    if(row[serviceHeaders.indexOf('Status')] === 'SUCCESS') {
+                    const completedAt = completedAtIndex !== -1 ? row[completedAtIndex] : null;
+                    // If no timestamp, maybe assume it's old? Or keep it? 
+                    // User said "1 hr after payment and completion". 
+                    // Let's assume if no timestamp, it's very old or just migrated. 
+                    // For now, if no timestamp, we'll hide it if it's SUCCESS to be safe, or show it? 
+                    // Let's show it if NO timestamp (legacy), but filter if timestamp exists. 
+                    // Actually, if we just implemented this, old requests won't have it.
+                    // Better to hide if we can't verify. But that might hide all history. 
+                    // Let's filter ONLY if we have a timestamp and it's old.
+
+                    if (completedAt) {
+                        const completedTime = new Date(completedAt).getTime();
+                        if (completedTime < oneHourAgo) {
+                            continue; // Skip this request
+                        }
+                    }
+                }
+
+                requests.push({
+                    requestId: row[serviceHeaders.indexOf('RequestID')],
+                    electricianId: row[serviceHeaders.indexOf('ElectricianID')],
+                    serviceType: row[serviceHeaders.indexOf('ServiceType')],
+                    status: row[serviceHeaders.indexOf('Status')],
+                    preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
+                    preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
+                    timestamp: row[serviceHeaders.indexOf('Timestamp')],
+                    rating: row[serviceHeaders.indexOf('Rating')] || undefined
                 });
             }
         }

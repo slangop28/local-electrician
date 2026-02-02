@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { appendRow, SHEET_TABS } from '@/lib/google-sheets';
+import { appendRow, getRows, updateRow, SHEET_TABS } from '@/lib/google-sheets';
 import { generateId, getTimestamp, REQUEST_STATUS } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
@@ -15,6 +15,9 @@ export async function POST(request: NextRequest) {
             issueDetail,
             customerName,
             customerPhone,
+            address,
+            city,
+            pincode,
         } = body;
 
         // Validate required fields
@@ -25,25 +28,48 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Generate IDs
+        // Check if customer exists
+        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
+        const custHeaders = customerRows[0] || [];
+        let existingCustId = null;
+        let existingRowIndex = -1;
+
+        for (let i = 1; i < customerRows.length; i++) {
+            if (customerRows[i][custHeaders.indexOf('Phone')] === customerPhone) {
+                existingCustId = customerRows[i][custHeaders.indexOf('CustomerID')];
+                existingRowIndex = i + 1;
+                break;
+            }
+        }
+
+        let customerId = existingCustId || generateId('CUST');
+
+        if (existingRowIndex > 0) {
+            // Update existing customer with new address if provided
+            if (address) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Address'), address);
+            if (city) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('City'), city);
+            if (pincode) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Pincode'), pincode);
+            // Update name if it was empty or changed? Let's just update name to be sure
+            await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Name'), customerName);
+        } else {
+            // Create New Customer
+            // Columns: Timestamp, CustomerID, Name, Phone, Email, City, Pincode, Address
+            // Note: Changed schema slightly to include Address at end if not present
+            const customerRow = [
+                getTimestamp(),
+                customerId,
+                customerName,
+                customerPhone,
+                '', // Email
+                city || '',
+                pincode || '',
+                address || '', // Using Address column
+            ];
+            await appendRow(SHEET_TABS.CUSTOMERS, customerRow);
+        }
+
+        // Generate Request ID
         const requestId = generateId('REQ');
-        const customerId = generateId('CUST');
-
-        // First, save customer to Customers sheet
-        // Columns: Timestamp, CustomerID, Name, Phone, Email, City, Pincode, Lat, Lng
-        const customerRow = [
-            getTimestamp(),
-            customerId,
-            customerName,
-            customerPhone,
-            '', // Email (optional)
-            '', // City
-            '', // Pincode
-            '', // Lat
-            '', // Lng
-        ];
-
-        await appendRow(SHEET_TABS.CUSTOMERS, customerRow);
 
         // Save service request
         // Columns: Timestamp, RequestID, CustomerID, ElectricianID, ServiceType, 

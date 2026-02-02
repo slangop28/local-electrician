@@ -59,8 +59,23 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Update the status (column K = index 10, row number = rowIndex + 1 for 1-indexing)
+        // Update the status (column K = index 10, row number = rowIndex + 1)
         await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, newStatus);
+
+        // If completing, save CompletedAt timestamp
+        if (action === 'complete') {
+            const headers = rows[0];
+            let completedAtIndex = headers.indexOf('CompletedAt');
+
+            if (completedAtIndex === -1) {
+                // Add header if not exists
+                completedAtIndex = headers.length; // Append to end
+                await updateRow(SHEET_TABS.SERVICE_REQUESTS, 1, completedAtIndex, 'CompletedAt');
+            }
+
+            const timestamp = new Date().toISOString();
+            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, completedAtIndex, timestamp);
+        }
 
         return NextResponse.json({
             success: true,
