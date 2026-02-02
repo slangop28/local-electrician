@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import { Button } from './Button';
 
@@ -56,8 +58,8 @@ export function ReviewModal({
                                 onClick={() => setRating(star)}
                             >
                                 <span className={`text-4xl ${star <= (hoverRating || rating)
-                                        ? 'text-yellow-400 drop-shadow-sm'
-                                        : 'text-gray-200'
+                                    ? 'text-yellow-400 drop-shadow-sm'
+                                    : 'text-gray-200'
                                     }`}>
                                     ★
                                 </span>
