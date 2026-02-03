@@ -59,13 +59,7 @@ export default function Home() {
               </div>
             </div>
             <div className="hidden md:flex items-center gap-4">
-              <button
-                onClick={() => setIsSidebarOpen(true)}
-                className="text-gray-600 hover:text-blue-600 font-medium transition-colors flex items-center gap-2"
-              >
-                <span>ℹ️</span>
-                About Us
-              </button>
+
               {isAuthenticated ? (
                 <ProfileDropdown />
               ) : (
@@ -112,10 +106,10 @@ export default function Home() {
 
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
                 <span className="text-glow">Electrician near you,</span>{' '}
-                <span className="text-gradient">in minutes</span>
+                <span className="text-glow">in minutes</span>
               </h1>
 
-              <p className="text-lg sm:text-xl text-gray-600 mb-8 max-w-xl mx-auto lg:mx-0">
+              <p className="text-lg sm:text-xl text-blue-100 text-glow-white mb-8 max-w-xl mx-auto lg:mx-0">
                 Connect with verified local electricians instantly. Fast, reliable, and affordable electrical services at your doorstep.
               </p>
 
@@ -398,10 +392,10 @@ export default function Home() {
             </div>
 
             <div className="flex items-center gap-6 text-gray-400">
-              <a href="#" className="hover:text-white transition-colors">About</a>
-              <a href="#" className="hover:text-white transition-colors">Contact</a>
-              <a href="#" className="hover:text-white transition-colors">Terms</a>
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
+              <Link href="/" className="hover:text-white transition-colors">Home</Link>
+              <Link href="/terms-and-conditions" className="hover:text-white transition-colors">Customer T&C</Link>
+              <Link href="/technician-terms-and-conditions" className="hover:text-white transition-colors">Technician T&C</Link>
+              <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
             </div>
 
             <p className="text-gray-500 text-sm">

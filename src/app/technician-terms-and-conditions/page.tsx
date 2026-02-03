@@ -72,6 +72,12 @@ function TechnicianTermsContent() {
   }, [fromRegistration, router]);
 
   const validateBankDetails = () => {
+    // If all fields are empty, it's valid (skipped)
+    if (!bankAccountName.trim() && !bankAccountNumber.trim() && !bankIfscCode.trim()) {
+      setErrors({});
+      return true;
+    }
+
     const newErrors: Record<string, string> = {};
 
     if (!bankAccountName.trim()) newErrors.bankAccountName = 'Account holder name is required';
@@ -605,9 +611,9 @@ function TechnicianTermsContent() {
           {/* Bank Details Form - Only shown when coming from registration */}
           {fromRegistration && storedData && (
             <div className="mt-12 p-6 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Bank Details for Payments</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Bank Details for Payments (Optional)</h3>
               <p className="text-gray-600 mb-6">
-                Please provide your bank details for receiving payments after successful services.
+                Please provide your bank details for receiving payments. You can add this later.
               </p>
 
               <div className="space-y-4">
@@ -672,7 +678,7 @@ function TechnicianTermsContent() {
                   size="lg"
                   onClick={handleSubmitRegistration}
                   loading={isSubmitting}
-                  disabled={!agreed || !bankAccountName || !bankAccountNumber || !bankIfscCode}
+                  disabled={!agreed || isSubmitting}
                 >
                   Complete Registration
                 </Button>
@@ -709,8 +715,8 @@ function TechnicianTermsContent() {
             <div className="flex items-center gap-6 text-gray-400">
               <Link href="/" className="hover:text-white transition-colors">Home</Link>
               <Link href="/terms-and-conditions" className="hover:text-white transition-colors">Customer T&C</Link>
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
-              <a href="#" className="hover:text-white transition-colors">Contact</a>
+              <Link href="/technician-terms-and-conditions" className="hover:text-white transition-colors">Technician T&C</Link>
+              <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
             </div>
 
             <p className="text-gray-500 text-sm">

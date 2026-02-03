@@ -135,9 +135,8 @@ export default function ElectricianRegistrationPage() {
         }
 
         if (step === 2) {
-            if (!formData.aadhaarFront) newErrors.aadhaarFront = 'Aadhaar front is required';
-            if (!formData.aadhaarBack) newErrors.aadhaarBack = 'Aadhaar back is required';
-            if (!formData.panFront) newErrors.panFront = 'PAN card is required';
+            // KYC documents are now optional as per user request
+            return true;
         }
 
         if (step === 3) {
@@ -562,7 +561,7 @@ export default function ElectricianRegistrationPage() {
                                         value={formData.state}
                                         onChange={(e) => updateField('state', e.target.value)}
                                         className={cn(
-                                            'w-full px-4 py-3 bg-gray-50 border-2 rounded-xl transition-all duration-200',
+                                            'w-full px-4 py-3 bg-gray-50 border-2 rounded-xl transition-all duration-200 text-gray-900',
                                             'focus:outline-none focus:bg-white focus:border-blue-500',
                                             errors.state ? 'border-red-500' : 'border-gray-200'
                                         )}
@@ -591,8 +590,8 @@ export default function ElectricianRegistrationPage() {
                     {currentStep === 2 && (
                         <div className="space-y-6 animate-slide-up">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900 mb-2">KYC Documents</h2>
-                                <p className="text-gray-500">Upload clear photos of your documents</p>
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">KYC Documents (Optional)</h2>
+                                <p className="text-gray-500">Upload clear photos of your documents if available. You can also do this later.</p>
                             </div>
 
                             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
@@ -602,21 +601,21 @@ export default function ElectricianRegistrationPage() {
                             </div>
 
                             <FileUpload
-                                label="Aadhaar Card - Front"
+                                label="Aadhaar Card - Front (Optional)"
                                 onChange={(file) => handleFileUpload('aadhaarFront', file)}
                                 preview={previews.aadhaarFront}
                                 error={errors.aadhaarFront}
                             />
 
                             <FileUpload
-                                label="Aadhaar Card - Back"
+                                label="Aadhaar Card - Back (Optional)"
                                 onChange={(file) => handleFileUpload('aadhaarBack', file)}
                                 preview={previews.aadhaarBack}
                                 error={errors.aadhaarBack}
                             />
 
                             <FileUpload
-                                label="PAN Card"
+                                label="PAN Card (Optional)"
                                 onChange={(file) => handleFileUpload('panFront', file)}
                                 preview={previews.panFront}
                                 error={errors.panFront}

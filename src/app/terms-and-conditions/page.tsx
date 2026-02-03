@@ -118,7 +118,7 @@ export default function TermsAndConditions() {
             <section>
               <h2 className="text-2xl font-bold text-gray-900 mb-4">6. Payments and Pricing</h2>
               <p>
-                <strong>Transparency is Our Priority:</strong> 
+                <strong>Transparency is Our Priority:</strong>
               </p>
               <ul className="list-disc list-inside space-y-2">
                 <li>All pricing is provided upfront before service commencement</li>
@@ -374,9 +374,9 @@ export default function TermsAndConditions() {
 
             <div className="flex items-center gap-6 text-gray-400">
               <Link href="/" className="hover:text-white transition-colors">Home</Link>
+              <Link href="/terms-and-conditions" className="hover:text-white transition-colors">Customer T&C</Link>
               <Link href="/technician-terms-and-conditions" className="hover:text-white transition-colors">Technician T&C</Link>
-              <a href="#" className="hover:text-white transition-colors">Privacy</a>
-              <a href="#" className="hover:text-white transition-colors">Contact</a>
+              <Link href="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
             </div>
 
             <p className="text-gray-500 text-sm">
