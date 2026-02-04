@@ -85,8 +85,8 @@ export default function BroadcastRequestPage() {
             const data = await response.json();
 
             if (data.success) {
-                setRequestId(data.requestId);
-                setSuccess(true);
+                // Redirect to dashboard with flag
+                router.push('/app?broadcast_initiated=true');
             } else {
                 alert(data.error || 'Failed to submit request');
             }

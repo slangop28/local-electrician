@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { Button, Card, useToast, Input } from '@/components/ui';
+import NotificationBell, { Notification } from '@/components/ui/NotificationBell';
 import { cn } from '@/lib/utils';
 
 interface ElectricianData {
@@ -67,6 +68,15 @@ export default function ElectricianDashboard() {
 
     // activeService derived state
     const activeService = services.find(s => s.status === 'ACCEPTED');
+
+    // Derived Notifications
+    const notifications: Notification[] = availableRequests.map(req => ({
+        id: req.requestId,
+        title: 'New Service Request',
+        message: `${req.serviceType} needed in ${req.customerCity}`,
+        time: new Date(req.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: 'info'
+    }));
 
     // Fetch electrician data - now supports both phone and electricianId
     useEffect(() => {
@@ -443,6 +453,7 @@ export default function ElectricianDashboard() {
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
+                            <NotificationBell notifications={notifications} />
                             {/* Availability Toggle */}
                             <button
                                 onClick={() => setIsOnline(!isOnline)}

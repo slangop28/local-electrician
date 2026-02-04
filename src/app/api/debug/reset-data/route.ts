@@ -16,7 +16,7 @@ export async function POST() {
             ],
             [SHEET_TABS.SERVICE_REQUESTS]: [
                 'Timestamp', 'RequestID', 'CustomerID', 'ElectricianID', 'ServiceType', 'Status',
-                'PreferredDate', 'PreferredSlot', 'Description', 'City', 'Pincode', 'Address', 'Lat', 'Lng'
+                'Urgency', 'PreferredDate', 'PreferredSlot', 'Description', 'City', 'Pincode', 'Address', 'Lat', 'Lng'
             ],
             [SHEET_TABS.USERS]: [
                 'Timestamp', 'UserID', 'Phone', 'Email', 'Name', 'AuthProvider', 'UserType',

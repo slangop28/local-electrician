@@ -9,9 +9,9 @@ export async function GET() {
             return NextResponse.json({ success: true, requests: [] });
         }
 
-        // Map rows to request objects
-        // Columns: Timestamp, RequestID, CustomerID, ElectricianID, ServiceType, 
-        // Urgency, PreferredDate, PreferredSlot, IssueDetail, IssuePhotoURL, Status
+        // Columns: 0:Timestamp, 1:RequestID, 2:CustomerID, 3:ElectricianID, 4:ServiceType, 
+        // 5:Status, 6:Urgency, 7:PreferredDate, 8:PreferredSlot, 9:Description, 
+        // 10:City, 11:Pincode, 12:Address, 13:Lat, 14:Lng
         const requests = rows.slice(1).map((row: string[]) => ({
             id: row[1] || '',
             customerId: row[2] || '',
@@ -19,11 +19,11 @@ export async function GET() {
             customerName: '', // Will be populated
             electricianName: '', // Will be populated
             serviceType: row[4] || '',
-            urgency: row[5] || '',
-            preferredDate: row[6] || '',
-            preferredSlot: row[7] || '',
-            issueDetail: row[8] || '',
-            status: row[10] || 'NEW',
+            urgency: row[6] || '',
+            preferredDate: row[7] || '',
+            preferredSlot: row[8] || '',
+            issueDetail: row[9] || '',
+            status: row[5] || 'NEW',
             timestamp: row[0] || '',
         }));
 

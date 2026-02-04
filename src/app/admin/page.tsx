@@ -36,6 +36,12 @@ interface ServiceRequest {
     urgency: string;
     status: string;
     timestamp: string;
+    customerPhone?: string;
+    customerAddress?: string;
+    customerCity?: string;
+    preferredDate?: string;
+    preferredSlot?: string;
+    description?: string;
 }
 
 interface ConfirmModal {
@@ -63,6 +69,8 @@ export default function AdminPanel() {
         electrician: null,
         step: 1
     });
+
+    const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
 
     // Simple password check (in production, use proper auth)
     const handleLogin = () => {
@@ -810,10 +818,18 @@ export default function AdminPanel() {
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
+                                                    onClick={() => setSelectedRequest(req)}
+                                                    className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                                >
+                                                    ℹ️ Details
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
                                                     onClick={() => updateRequestStatus(req.id, 'SUCCESS')}
                                                     className="text-green-600 border-green-200 hover:bg-green-50"
                                                 >
-                                                    Mark Complete
+                                                    ✓ Complete
                                                 </Button>
                                                 <Button
                                                     size="sm"
@@ -821,7 +837,7 @@ export default function AdminPanel() {
                                                     onClick={() => updateRequestStatus(req.id, 'CANCELLED')}
                                                     className="text-red-500 border-red-200 hover:bg-red-50"
                                                 >
-                                                    Cancel
+                                                    ✗ Cancel
                                                 </Button>
                                             </div>
                                         </div>
@@ -1068,6 +1084,114 @@ export default function AdminPanel() {
                                     </div>
                                 </>
                             )}
+                        </div>
+                    </div>
+                </>
+            )}
+            {/* Request Details Modal */}
+            {selectedRequest && (
+                <>
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setSelectedRequest(null)} />
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Request Details</h2>
+                                    <p className="text-sm text-gray-500">ID: {selectedRequest.id}</p>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedRequest(null)}
+                                    className="p-2 hover:bg-gray-100 rounded-full"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-6 mb-6">
+                                {/* Customer Info */}
+                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                                    <h3 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                        👤 Customer
+                                    </h3>
+                                    <div className="space-y-2 text-sm">
+                                        <p><span className="text-gray-500">Name:</span> <span className="font-medium">{selectedRequest.customerName || 'N/A'}</span></p>
+                                        <p><span className="text-gray-500">Phone:</span> <span className="font-medium font-mono">{selectedRequest.customerPhone || selectedRequest.customerId}</span></p>
+                                        <p><span className="text-gray-500">Address:</span> <span className="font-medium">{selectedRequest.customerAddress || 'N/A'}</span></p>
+                                        {selectedRequest.customerCity && <p><span className="text-gray-500">City:</span> <span className="font-medium">{selectedRequest.customerCity}</span></p>}
+                                        {selectedRequest.customerAddress && (
+                                            <a
+                                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedRequest.customerAddress + ' ' + (selectedRequest.customerCity || ''))}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium mt-1"
+                                            >
+                                                📍 View on Map
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Electrician Info */}
+                                <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                                    <h3 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
+                                        ⚡ Electrician
+                                    </h3>
+                                    <div className="space-y-2 text-sm">
+                                        <p><span className="text-gray-500">Name:</span> <span className="font-medium">{selectedRequest.electricianName || 'N/A'}</span></p>
+                                        <p><span className="text-gray-500">ID:</span> <span className="font-medium font-mono">{selectedRequest.electricianId || 'N/A'}</span></p>
+                                        <p><span className="text-gray-500">Phone:</span> <span className="font-medium font-mono">{electricians.find(e => e.id === selectedRequest.electricianId)?.phone || 'N/A'}</span></p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Service Info */}
+                            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-6">
+                                <h3 className="font-bold text-gray-900 mb-3">Service Information</h3>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p className="text-gray-500">Type</p>
+                                        <p className="font-medium">{selectedRequest.serviceType}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Date & Time</p>
+                                        <p className="font-medium">{selectedRequest.preferredDate} • {selectedRequest.preferredSlot}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Urgency</p>
+                                        <span className={cn(
+                                            'px-2 py-0.5 rounded-full text-xs font-bold',
+                                            selectedRequest.urgency === 'EMERGENCY' ? 'bg-red-100 text-red-700' :
+                                                selectedRequest.urgency === 'URGENT' ? 'bg-orange-100 text-orange-700' :
+                                                    'bg-blue-100 text-blue-700'
+                                        )}>
+                                            {selectedRequest.urgency}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <p className="text-gray-500">Status</p>
+                                        <span className={cn(
+                                            'px-2 py-0.5 rounded-full text-xs font-bold',
+                                            selectedRequest.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-700' :
+                                                selectedRequest.status === 'SUCCESS' ? 'bg-green-100 text-green-700' :
+                                                    'bg-gray-100 text-gray-700'
+                                        )}>
+                                            {selectedRequest.status}
+                                        </span>
+                                    </div>
+                                    {selectedRequest.description && (
+                                        <div className="col-span-2 mt-2">
+                                            <p className="text-gray-500">Description</p>
+                                            <p className="italic text-gray-700">{selectedRequest.description}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end bg-gray-50 -mx-6 -mb-6 p-4 rounded-b-2xl border-t border-gray-100">
+                                <Button onClick={() => setSelectedRequest(null)}>
+                                    Close
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </>

@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
         }
 
         const requestRow = rows[rowIndex];
-        const currentElectricianId = requestRow[3];
-        const currentStatus = requestRow[10];
+        const currentElectricianId = requestRow[3]; // Index 3: ElectricianID
+        const currentStatus = requestRow[5]; // Index 5: Status
 
         // Case 1: Accepting a BROADCAST request
         if (currentElectricianId === 'BROADCAST') {
@@ -64,8 +64,8 @@ export async function POST(request: NextRequest) {
             // Assign to this electrician
             // Update ElectricianID (Column D = index 3)
             await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 3, electricianId);
-            // Update Status (Column K = index 10)
-            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, REQUEST_STATUS.ACCEPTED);
+            // Update Status (Column F = index 5)
+            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, REQUEST_STATUS.ACCEPTED);
 
             return NextResponse.json({
                 success: true,
@@ -97,8 +97,8 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Update the status (column K = index 10, row number = rowIndex + 1)
-        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, newStatus);
+        // Update the status (column F = index 5, row number = rowIndex + 1)
+        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, newStatus);
 
         // If completing, save CompletedAt timestamp
         if (action === 'complete') {

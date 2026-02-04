@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button, Card, Input, useToast } from '@/components/ui';
 import { PaymentModal } from '@/components/ui/PaymentModal';
+import NotificationBell, { Notification } from '@/components/ui/NotificationBell';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/AuthContext';
 
@@ -29,9 +30,45 @@ export default function CustomerDashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
     const [gettingLocation, setGettingLocation] = useState(false);
 
+    // Check for redirect param
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('broadcast_initiated') === 'true') {
+                // Clear the param to prevent showing again on reload (optional but good ux)
+                window.history.replaceState(null, '', '/app');
+
+                // Show Special Notification
+                showToast('We are finding the best technician for you.. Hold on and grab a Coffee ☕', 'info');
+            }
+        }
+    }, []);
+
     // Request & Payment State
     const [activeRequest, setActiveRequest] = useState<any>(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+    // Derived Notifications
+    const notifications: Notification[] = [];
+    if (activeRequest) {
+        if (activeRequest.status === 'ACCEPTED') {
+            notifications.push({
+                id: 'allocated',
+                title: 'Technician Assigned',
+                message: 'An electrician is on the way!',
+                time: activeRequest.timestamp ? new Date().toLocaleTimeString() : '',
+                type: 'success'
+            });
+        } else if (activeRequest.status === 'SUCCESS') {
+            notifications.push({
+                id: 'completed',
+                title: 'Service Completed',
+                message: 'Please complete payment.',
+                time: activeRequest.timestamp ? new Date().toLocaleTimeString() : '',
+                type: 'info'
+            });
+        }
+    }
 
     // Fetch active request
     useEffect(() => {
@@ -225,9 +262,12 @@ export default function CustomerDashboard() {
                         </div>
                         <span className="font-bold text-gray-900">Local Electrician</span>
                     </Link>
-                    <Link href="/electrician">
-                        <Button variant="outline" size="sm">Join as Electrician</Button>
-                    </Link>
+                    <div className="flex items-center gap-4">
+                        <NotificationBell notifications={notifications} />
+                        <Link href="/electrician">
+                            <Button variant="outline" size="sm">Join as Electrician</Button>
+                        </Link>
+                    </div>
                 </div>
             </header>
 

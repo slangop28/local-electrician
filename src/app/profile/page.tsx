@@ -139,6 +139,10 @@ export default function ProfilePage() {
     useEffect(() => {
         if (userProfile?.phone) {
             fetchActiveBroadcast();
+
+            // Poll for updates (e.g., if status changes to ACCEPTED or if new request appears)
+            const interval = setInterval(fetchActiveBroadcast, 5000);
+            return () => clearInterval(interval);
         }
     }, [userProfile]);
 

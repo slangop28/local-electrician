@@ -82,14 +82,15 @@ export async function POST(request: NextRequest) {
             'BROADCAST',      // 3: ElectricianID
             serviceType,      // 4: ServiceType
             REQUEST_STATUS.NEW, // 5: Status
-            preferredDate || '', // 6: PreferredDate
-            preferredSlot || '', // 7: PreferredSlot
-            description,      // 8: Description
-            city || '',       // 9: City
-            pincode || '',    // 10: Pincode
-            address || '',    // 11: Address
-            lat || '',        // 12: Lat
-            lng || '',        // 13: Lng
+            urgency,          // 6: Urgency
+            preferredDate || '', // 7: PreferredDate
+            preferredSlot || '', // 8: PreferredSlot
+            description,      // 9: Description
+            city || '',       // 10: City
+            pincode || '',    // 11: Pincode
+            address || '',    // 12: Address
+            lat || '',        // 13: Lat
+            lng || '',        // 14: Lng
         ];
 
         await appendRow(SHEET_TABS.SERVICE_REQUESTS, requestRow);

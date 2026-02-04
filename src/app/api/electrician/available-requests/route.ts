@@ -11,20 +11,7 @@ export async function GET(request: NextRequest) {
         }
 
         const requestRows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-        const headers = requestRows[0] || [];
-        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
-        const custHeaders = customerRows[0] || [];
-
-        // Map customers for quick lookup
-        const customers: Record<string, any> = {};
-        customerRows.slice(1).forEach((row: string[]) => {
-            customers[row[custHeaders.indexOf('CustomerID')]] = {
-                city: row[custHeaders.indexOf('City')],
-                area: row[custHeaders.indexOf('City')], // Fallback if area not separate
-                name: row[custHeaders.indexOf('Name')],
-                phone: row[custHeaders.indexOf('Phone')]
-            };
-        });
+        const customers = await getCustomersMap(); // Helper to get customers
 
         // Filter for NEW broadcast requests
         const availableRequests: any[] = [];
@@ -32,14 +19,17 @@ export async function GET(request: NextRequest) {
         // Skip header
         for (let i = 1; i < requestRows.length; i++) {
             const row = requestRows[i];
-            const status = row[headers.indexOf('Status')];
-            const electricianId = row[headers.indexOf('ElectricianID')];
-            const customerId = row[headers.indexOf('CustomerID')];
+            // Schema: 0:Timestamp, 1:RequestID, 2:CustomerID, 3:ElectricianID, 4:ServiceType, 
+            // 5:Status, 6:Urgency, 7:PreferredDate, 8:PreferredSlot, 9:Description, 
+            // 10:City, 11:Pincode, 12:Address, 13:Lat, 14:Lng
+            const status = row[5];
+            const electricianId = row[3];
+            const customerId = row[2];
 
             if (status === 'NEW' && electricianId?.trim() === 'BROADCAST') {
                 // Check location match
-                // Prioritize City from Request, fallback to Customer
-                const reqCity = row[headers.indexOf('City')];
+                // Prioritize City from Request (Index 10), fallback to Customer
+                const reqCity = row[10];
                 const cust = customers[customerId];
 
                 // Effective City: Request City > Customer City (from join)
@@ -52,15 +42,15 @@ export async function GET(request: NextRequest) {
                     // Loose matching: check for inclusion or exact match
                     if (targetCity === electricianCity || targetCity.includes(electricianCity) || electricianCity.includes(targetCity)) {
                         availableRequests.push({
-                            requestId: row[headers.indexOf('RequestID')],
+                            requestId: row[1],
                             customerId: customerId,
-                            serviceType: row[headers.indexOf('ServiceType')],
+                            serviceType: row[4],
                             status: status,
-                            timestamp: row[headers.indexOf('Timestamp')],
-                            urgency: row[headers.indexOf('Urgency')] || 'Normal', // Fallback if column missing
-                            preferredDate: row[headers.indexOf('PreferredDate')],
-                            preferredSlot: row[headers.indexOf('PreferredSlot')],
-                            description: row[headers.indexOf('Description')] || row[headers.indexOf('IssueDetail')] || '',
+                            timestamp: row[0],
+                            urgency: row[6] || 'Normal',
+                            preferredDate: row[7],
+                            preferredSlot: row[8],
+                            description: row[9] || '',
                             // Include customer details for the card
                             customerName: cust?.name || 'Unknown', // Fallback
                             customerCity: effectiveCity,
@@ -79,4 +69,25 @@ export async function GET(request: NextRequest) {
         console.error('Fetch available requests error:', error);
         return NextResponse.json({ success: false, error: 'Failed to fetch requests' }, { status: 500 });
     }
+}
+
+async function getCustomersMap() {
+    const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
+    const customers: Record<string, any> = {};
+    if (customerRows.length > 1) {
+        const custHeaders = customerRows[0];
+        const idIndex = custHeaders.indexOf('CustomerID');
+        const cityIndex = custHeaders.indexOf('City');
+        const nameIndex = custHeaders.indexOf('Name');
+
+        customerRows.slice(1).forEach((row: string[]) => {
+            if (row[idIndex]) {
+                customers[row[idIndex]] = {
+                    city: row[cityIndex],
+                    name: row[nameIndex]
+                };
+            }
+        });
+    }
+    return customers;
 }
