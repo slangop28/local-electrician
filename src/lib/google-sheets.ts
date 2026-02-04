@@ -37,7 +37,7 @@ export async function appendRow(tabName: string, values: string[]) {
 
     const response = await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${tabName}!A1:Z1000`,
+        range: `${tabName}!A:A`, // Force append to start at column A
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [values],
@@ -177,7 +177,7 @@ export async function ensureSheet(tabName: string) {
                 // It's safer to fetch the Electricians sheet headers once and copy them, but to keep it simple and fast:
                 // We'll define a generic set or just let the first row define columns (which is bad for headers).
                 // Let's add a generic set based on known columns.
-                await appendRow(tabName, ['Timestamp', 'ElectricianID', 'NameAsPerAadhaar', 'PhonePrimary', 'PhoneSecondary', 'AadhaarFrontURL', 'AadhaarBackURL', 'PanFrontURL', 'Address', 'City', 'Area', 'State', 'Pincode', 'Latitude', 'Longitude', 'GeocodingStatus', 'TotalReferrals', 'ReferralCode', 'Status', 'WalletBalance']);
+                await appendRow(tabName, ['Timestamp', 'ElectricianID', 'NameAsPerAadhaar', 'PhonePrimary', 'PhoneSecondary', 'AadhaarFrontURL', 'AadhaarBackURL', 'PanFrontURL', 'HouseNo', 'Area', 'City', 'District', 'State', 'Pincode', 'Latitude', 'Longitude', 'ReferralCode', 'ReferredBy', 'Status', 'TotalReferrals', 'WalletBalance', 'Email']);
             }
         }
     } catch (error) {

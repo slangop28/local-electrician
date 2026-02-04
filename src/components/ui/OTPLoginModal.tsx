@@ -320,7 +320,7 @@ export default function OTPLoginModal({
             </h2>
             <p className="text-gray-400 text-sm">
               {step === 'phone'
-                ? 'Enter your mobile number or use Google to continue'
+                ? 'Login with Google or Facebook'
                 : `We've sent a verification code to +91 ${phoneNumber}`}
             </p>
           </div>

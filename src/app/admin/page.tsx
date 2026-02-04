@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button, Card, Input, useToast } from '@/components/ui';
 import { cn, ELECTRICIAN_STATUS, REQUEST_STATUS } from '@/lib/utils';
 
-type Tab = 'kyc' | 'verified' | 'bank' | 'requests' | 'analytics' | 'referrals';
+type Tab = 'kyc' | 'verified' | 'bank' | 'requests' | 'ongoing' | 'analytics' | 'referrals';
 
 interface Electrician {
     id: string;
@@ -79,7 +79,7 @@ export default function AdminPanel() {
         if (isAuthenticated) {
             if (activeTab === 'kyc' || activeTab === 'verified' || activeTab === 'bank') {
                 fetchElectricians();
-            } else if (activeTab === 'requests') {
+            } else if (activeTab === 'requests' || activeTab === 'ongoing') {
                 fetchRequests();
             }
         }
@@ -155,12 +155,12 @@ export default function AdminPanel() {
         }
     };
 
-    const updateRequestStatus = async (id: string, status: string) => {
+    const updateRequestStatus = async (id: string, status: string, electricianId?: string) => {
         try {
             const response = await fetch('/api/admin/update-request', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requestId: id, status }),
+                body: JSON.stringify({ requestId: id, status, electricianId }),
             });
             const data = await response.json();
             if (data.success) {
@@ -392,8 +392,9 @@ export default function AdminPanel() {
                     {[
                         { id: 'kyc' as Tab, label: 'Pending KYC', icon: '📋', count: pendingCount },
                         { id: 'bank' as Tab, label: 'Bank Verification', icon: '🏦', count: electricians.filter(e => e.bankDetails?.status === 'PENDING').length },
-                        { id: 'verified' as Tab, label: 'Verified Electricians', icon: '✅', count: verifiedCount },
-                        { id: 'requests' as Tab, label: 'Service Requests', icon: '🔧', count: totalRequests },
+                        { id: 'verified' as Tab, label: 'Verified', icon: '✅', count: verifiedCount },
+                        { id: 'ongoing' as Tab, label: 'Ongoing Requests', icon: '⚡', count: requests.filter(r => ['NEW', 'ACCEPTED'].includes(r.status)).length },
+                        { id: 'requests' as Tab, label: 'All Requests', icon: '🔧', count: totalRequests },
                         { id: 'referrals' as Tab, label: 'Referrals', icon: '🎁' },
                     ].map((tab) => (
                         <button
@@ -714,14 +715,183 @@ export default function AdminPanel() {
                     </div>
                 )}
 
+                {/* Ongoing Requests Tab */}
+                {activeTab === 'ongoing' && (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-gray-900">Ongoing Service Requests</h2>
+                            <Button variant="outline" size="sm" onClick={fetchRequests}>
+                                🔄 Refresh
+                            </Button>
+                        </div>
+
+                        {/* Broadcast Requests Section */}
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                            <h3 className="font-bold text-blue-900 mb-2">📡 Active Broadcasts</h3>
+                            {requests.filter(r => r.status === 'NEW' && r.electricianId === 'BROADCAST').length === 0 ? (
+                                <p className="text-sm text-blue-700">No active broadcasts.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {requests.filter(r => r.status === 'NEW' && r.electricianId === 'BROADCAST').map(req => (
+                                        <div key={req.id} className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-900">{req.serviceType}</span>
+                                                    <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full">{req.urgency}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-600">Cust: {req.customerName || req.customerId}</p>
+                                                <p className="text-xs text-gray-400">ID: {req.id} • 🕒 {new Date(req.timestamp).toLocaleString()}</p>
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <select
+                                                    className="px-3 py-1 border rounded text-sm"
+                                                    onChange={(e) => {
+                                                        const electricianId = e.target.value;
+                                                        if (electricianId) {
+                                                            if (confirm(`Assign request ${req.id} to ${electricianId}?`)) {
+                                                                updateRequestStatus(req.id, 'ACCEPTED', electricianId);
+                                                            } else {
+                                                                e.target.value = '';
+                                                            }
+                                                        }
+                                                    }}
+                                                >
+                                                    <option value="">Assign Electrician...</option>
+                                                    {electricians.filter(e => e.status === 'VERIFIED').map(e => (
+                                                        <option key={e.id} value={e.id}>{e.name} ({e.city})</option>
+                                                    ))}
+                                                </select>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-red-500 border-red-200 hover:bg-red-50"
+                                                    onClick={() => updateRequestStatus(req.id, 'CANCELLED')}
+                                                >
+                                                    Cancel Broadcast
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Active Accepted Requests */}
+                        <h3 className="font-bold text-gray-900 mt-6 mb-4">Active Jobs</h3>
+                        {requests.filter(r => r.status === 'ACCEPTED' || (r.status === 'NEW' && r.electricianId !== 'BROADCAST')).length === 0 ? (
+                            <p className="text-gray-500 italic">No active jobs in progress.</p>
+                        ) : (
+                            <div className="grid gap-4">
+                                {requests.filter(r => r.status === 'ACCEPTED' || (r.status === 'NEW' && r.electricianId !== 'BROADCAST')).map((req) => (
+                                    <div key={req.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm border-l-4 border-l-green-500">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <h3 className="font-bold text-gray-900">{req.id}</h3>
+                                                    <span className={cn(
+                                                        'px-2 py-1 rounded-full text-xs font-medium',
+                                                        req.status === 'NEW' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                                                    )}>
+                                                        {req.status === 'NEW' ? 'Pending Acceptance' : 'In Progress'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-gray-500">
+                                                    🔧 {req.serviceType}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-1">
+                                                    🕒 {new Date(req.timestamp).toLocaleString()}
+                                                </p>
+                                                <p className="text-xs text-gray-500 mt-1">
+                                                    {req.customerName || req.customerId} ➡️ {req.electricianName || req.electricianId}
+                                                </p>
+                                            </div>
+
+                                            <div className="flex items-center gap-3">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => updateRequestStatus(req.id, 'SUCCESS')}
+                                                    className="text-green-600 border-green-200 hover:bg-green-50"
+                                                >
+                                                    Mark Complete
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => updateRequestStatus(req.id, 'CANCELLED')}
+                                                    className="text-red-500 border-red-200 hover:bg-red-50"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Requests Tab */}
                 {activeTab === 'requests' && (
-                    <div className="space-y-4">
+                    <div className="space-y-6">
                         <div className="flex justify-between items-center">
                             <h2 className="text-xl font-bold text-gray-900">Service Requests</h2>
                             <Button variant="outline" size="sm" onClick={fetchRequests}>
                                 🔄 Refresh
                             </Button>
+                        </div>
+
+                        {/* Broadcast Requests Section */}
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                            <h3 className="font-bold text-blue-900 mb-2">📡 Active Broadcasts</h3>
+                            {requests.filter(r => r.status === 'NEW' && r.electricianId === 'BROADCAST').length === 0 ? (
+                                <p className="text-sm text-blue-700">No active broadcasts.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {requests.filter(r => r.status === 'NEW' && r.electricianId === 'BROADCAST').map(req => (
+                                        <div key={req.id} className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm flex flex-col md:flex-row justify-between gap-4">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-gray-900">{req.serviceType}</span>
+                                                    <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full">{req.urgency}</span>
+                                                </div>
+                                                <p className="text-sm text-gray-600">Cust: {req.customerName || req.customerId}</p>
+                                                <p className="text-xs text-gray-400">{req.id}</p>
+                                            </div>
+                                            <div className="flex flex-col gap-2">
+                                                <select
+                                                    className="px-3 py-1 border rounded text-sm"
+                                                    onChange={(e) => {
+                                                        const electricianId = e.target.value;
+                                                        if (electricianId) {
+                                                            if (confirm(`Assign request ${req.id} to ${electricianId}?`)) {
+                                                                // Call update API with electricianId
+                                                                updateRequestStatus(req.id, 'ACCEPTED', electricianId);
+                                                            } else {
+                                                                e.target.value = ''; // Reset selection
+                                                            }
+                                                        }
+                                                    }}
+                                                >
+                                                    <option value="">Assign Electrician...</option>
+                                                    {electricians.filter(e => e.status === 'VERIFIED').map(e => (
+                                                        <option key={e.id} value={e.id}>{e.name} ({e.city})</option>
+                                                    ))}
+                                                </select>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-red-500 border-red-200 hover:bg-red-50"
+                                                    onClick={() => updateRequestStatus(req.id, 'CANCELLED')}
+                                                >
+                                                    Cancel Broadcast
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {loading ? (
@@ -737,7 +907,7 @@ export default function AdminPanel() {
                             </div>
                         ) : (
                             <div className="grid gap-4">
-                                {requests.map((req) => (
+                                {requests.filter(r => r.electricianId !== 'BROADCAST').map((req) => (
                                     <div key={req.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
                                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                             <div>
@@ -754,6 +924,9 @@ export default function AdminPanel() {
                                                 </div>
                                                 <p className="text-sm text-gray-500">
                                                     🔧 {req.serviceType}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-1">
+                                                    🕒 {new Date(req.timestamp).toLocaleString()}
                                                 </p>
                                                 <p className="text-xs text-gray-400 mt-1">
                                                     Customer: <span className="font-semibold text-gray-700">{req.customerName || req.customerId}</span>

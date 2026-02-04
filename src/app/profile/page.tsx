@@ -124,12 +124,67 @@ export default function ProfilePage() {
         }
     };
 
+    // Broadcast State
+    const [activeBroadcast, setActiveBroadcast] = useState<ServiceRequest | null>(null);
+    const [isCancellingBroadcast, setIsCancellingBroadcast] = useState(false);
+
     // Redirect if not authenticated
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
             router.push('/');
         }
     }, [isLoading, isAuthenticated, router]);
+
+    // Fetch Active Broadcast
+    useEffect(() => {
+        if (userProfile?.phone) {
+            fetchActiveBroadcast();
+        }
+    }, [userProfile]);
+
+    const fetchActiveBroadcast = async () => {
+        if (!userProfile?.phone) return;
+        try {
+            const response = await fetch(`/api/customer/active-request?phone=${userProfile.phone}`);
+            const data = await response.json();
+            if (data.success && data.request && data.request.status === 'NEW' && data.request.electricianId === 'BROADCAST') {
+                setActiveBroadcast(data.request);
+            } else {
+                setActiveBroadcast(null);
+            }
+        } catch (error) {
+            console.error('Failed to fetch active broadcast:', error);
+        }
+    };
+
+    const handleStopBroadcast = async () => {
+        if (!activeBroadcast) return;
+
+        if (!confirm('Are you sure you want to stop looking for an electrician?')) return;
+
+        setIsCancellingBroadcast(true);
+        try {
+            const response = await fetch('/api/request/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId: activeBroadcast.requestId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert('Broadcast stopped successfully.');
+                setActiveBroadcast(null);
+                // Refresh history if open
+                if (activeTab === 'history') fetchServiceHistory();
+            } else {
+                alert(data.error || 'Failed to stop broadcast');
+            }
+        } catch (error) {
+            console.error('Cancel error:', error);
+            alert('Failed to stop broadcast');
+        } finally {
+            setIsCancellingBroadcast(false);
+        }
+    };
 
     if (isLoading) {
         return (
@@ -230,7 +285,41 @@ export default function ProfilePage() {
                             Service History
                         </button>
                     )}
+                    {userProfile.userType === 'customer' && (
+                        <Link href="/app">
+                            <button
+                                className="px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md hover:shadow-lg animate-pulse"
+                            >
+                                Ongoing Service Requests
+                            </button>
+                        </Link>
+                    )}
                 </div>
+
+                {/* Active Broadcast Alert */}
+                {activeBroadcast && (
+                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-2xl p-6 shadow-lg shadow-blue-500/10 animate-pulse">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl animate-bounce">
+                                    📡
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-blue-900 text-lg">Finding Electrician...</h3>
+                                    <p className="text-blue-700">Detailed Request: {activeBroadcast.serviceType}</p>
+                                    <p className="text-sm text-blue-500">We are broadcasting your request to nearby electricians.</p>
+                                </div>
+                            </div>
+                            <Button
+                                onClick={handleStopBroadcast}
+                                disabled={isCancellingBroadcast}
+                                className="bg-red-500 hover:bg-red-600 text-white shadow-md w-full md:w-auto"
+                            >
+                                {isCancellingBroadcast ? 'Stopping...' : '🛑 Stop Finding Electrician'}
+                            </Button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Profile Tab */}
                 {activeTab === 'profile' && (
@@ -310,7 +399,7 @@ export default function ProfilePage() {
                                     <div className="flex justify-between items-start mb-3">
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{request.serviceType}</h3>
-                                            <p className="text-sm text-gray-500">Electrician: {request.electricianName || request.electricianId}</p>
+                                            <p className="text-sm text-gray-500">Electrician ID: {request.electricianId}</p>
                                             <p className="text-xs text-gray-400">ID: {request.requestId}</p>
                                         </div>
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>

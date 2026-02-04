@@ -4,7 +4,7 @@ import { REQUEST_STATUS } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
     try {
-        const { requestId, status } = await request.json();
+        const { requestId, status, electricianId } = await request.json();
 
         if (!requestId || !status) {
             return NextResponse.json({
@@ -32,8 +32,15 @@ export async function POST(request: NextRequest) {
             }, { status: 404 });
         }
 
-        // Update the status (column K = index 10, row number = rowIndex + 1 for 1-indexing)
+        // Update Status (column K = index 10)
         await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, status);
+
+        // Update Electrician ID if provided (column E = index 4)
+        if (requestId && status === 'ACCEPTED' && electricianId) {
+            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 4, electricianId);
+            // Also update Electrician Name (column F = index 5) - Optional but good for consistency
+            // Note: We might need to fetch electrician name here or pass it in body. For now ID is critical.
+        }
 
         return NextResponse.json({
             success: true,

@@ -35,9 +35,23 @@ export default function CustomerDashboard() {
 
     // Fetch active request
     useEffect(() => {
+        let intervalId: NodeJS.Timeout;
+
+        const fetchRequest = async () => {
+            if (userProfile?.id) {
+                await fetchActiveRequest();
+            }
+        };
+
         if (userProfile?.id) {
-            fetchActiveRequest();
+            fetchRequest();
+            // Poll every 5 seconds
+            intervalId = setInterval(fetchRequest, 5000);
         }
+
+        return () => {
+            if (intervalId) clearInterval(intervalId);
+        };
     }, [userProfile]);
 
     const fetchActiveRequest = async () => {
@@ -327,6 +341,70 @@ export default function CustomerDashboard() {
                 </Card>
 
                 {/* View Toggle */}
+                {/* Book Electrician Button - Glowing Blue */}
+                {location && (
+                    <div className="mb-8 bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                        <div>
+                            <h2 className="text-2xl font-bold mb-2 text-gray-900">Need an Electrician Urgently?</h2>
+                            <p className="text-gray-600">Broadcast your request to all nearby electricians instantly.</p>
+                        </div>
+                        <Link href="/request/broadcast">
+                            <div className="relative group">
+                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/50 to-cyan-400/50 rounded-xl blur-xl group-hover:blur-2xl transition-all duration-300 animate-pulse-glow" />
+                                <Button size="lg" className="relative bg-gradient-to-r from-cyan-500 to-cyan-400 text-white font-bold rounded-xl hover:from-cyan-600 hover:to-cyan-500 border border-cyan-300/50 shadow-lg shadow-cyan-500/30 whitespace-nowrap px-8 py-4 text-lg animate-pulse">
+                                    <span className="mr-2">⚡</span>
+                                    Book Electrician
+                                </Button>
+                            </div>
+                        </Link>
+                    </div>
+                )}
+
+                {/* Active Request Notification */}
+                {activeRequest && activeRequest.status === 'NEW' && activeRequest.electricianId === 'BROADCAST' && (
+                    <div className="mb-8">
+                        <Card variant="elevated" className="bg-blue-50 border-blue-200 animate-pulse">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                        <span className="text-2xl animate-spin-slow">📡</span>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-blue-900">Broadcasting Request...</h3>
+                                        <p className="text-blue-700 text-sm">Waiting for a nearby electrician to accept.</p>
+                                    </div>
+                                </div>
+                                <Link href="/profile">
+                                    <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100 bg-white">
+                                        View in Profile →
+                                    </Button>
+                                </Link>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
+                {activeRequest && activeRequest.status === 'ACCEPTED' && (
+                    <div className="mb-8">
+                        <Card variant="elevated" className="bg-green-50 border-green-200">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                    <span className="text-2xl">✅</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-green-900">Technician Allotted!</h3>
+                                    <p className="text-green-700 text-sm">
+                                        Electrician <strong>{activeRequest.electricianId}</strong> is on the way.
+                                    </p>
+                                </div>
+                                <div className="ml-auto">
+                                    <Button size="sm" variant="primary" onClick={() => window.location.reload()}>View Details</Button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
+
                 {location && (
                     <div className="flex justify-between items-center mb-4">
                         <p className="text-gray-600">
@@ -470,12 +548,10 @@ function ElectricianCard({ electrician }: { electrician: Electrician }) {
                 <span className="text-sm text-gray-500 ml-1">5.0 (New)</span>
             </div>
 
-            {/* Book Button */}
-            <Link href={`/request/${electrician.id}`}>
-                <Button fullWidth size="sm" className="group-hover:shadow-lg transition-shadow">
-                    Book Now
-                </Button>
-            </Link>
+            {/* Book Button - Removed/Changed */}
+            <Button fullWidth size="sm" variant="outline" className="text-gray-400 border-gray-200 cursor-not-allowed" disabled>
+                Verified Partner
+            </Button>
         </Card>
     );
 }

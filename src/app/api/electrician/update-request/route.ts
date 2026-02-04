@@ -30,21 +30,59 @@ export async function POST(request: NextRequest) {
         }
 
         // Find the request row
+        // For BROADCAST requests, we validat on RequestID only first, then check ElectricianID
         const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-        const rowIndex = rows.findIndex((row: string[]) =>
-            row[1] === requestId && row[3] === electricianId
-        );
+        const rowIndex = rows.findIndex((row: string[]) => row[1] === requestId);
 
         if (rowIndex === -1) {
             return NextResponse.json({
                 success: false,
-                error: 'Request not found or does not belong to this electrician'
+                error: 'Request not found'
             }, { status: 404 });
         }
 
-        // Verify action is valid for current status
-        const currentStatus = rows[rowIndex][10];
+        const requestRow = rows[rowIndex];
+        const currentElectricianId = requestRow[3];
+        const currentStatus = requestRow[10];
 
+        // Case 1: Accepting a BROADCAST request
+        if (currentElectricianId === 'BROADCAST') {
+            if (action !== 'accept') {
+                return NextResponse.json({
+                    success: false,
+                    error: 'Broadcast requests can only be accepted'
+                }, { status: 400 });
+            }
+
+            if (currentStatus !== REQUEST_STATUS.NEW) {
+                return NextResponse.json({
+                    success: false,
+                    error: 'Request is no longer available'
+                }, { status: 400 });
+            }
+
+            // Assign to this electrician
+            // Update ElectricianID (Column D = index 3)
+            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 3, electricianId);
+            // Update Status (Column K = index 10)
+            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, REQUEST_STATUS.ACCEPTED);
+
+            return NextResponse.json({
+                success: true,
+                message: 'Request accepted successfully',
+                newStatus: REQUEST_STATUS.ACCEPTED
+            });
+        }
+
+        // Case 2: Standard Flow (Request assigned to this electrician)
+        if (currentElectricianId !== electricianId) {
+            return NextResponse.json({
+                success: false,
+                error: 'Request does not belong to this electrician'
+            }, { status: 403 });
+        }
+
+        // Verify action is valid for current status
         if (action === 'accept' && currentStatus !== REQUEST_STATUS.NEW) {
             return NextResponse.json({
                 success: false,
