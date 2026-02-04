@@ -18,6 +18,9 @@ interface ElectricianData {
     pincode: string;
     status: string;
     referralCode: string;
+    aadhaarFrontURL?: string;
+    aadhaarBackURL?: string;
+    panFrontURL?: string;
     totalReferrals: number;
     servicesCompleted: number;
     rating?: number | string;
@@ -52,26 +55,49 @@ export default function ElectricianDashboard() {
     const [electricianData, setElectricianData] = useState<ElectricianData | null>(null);
     const [services, setServices] = useState<ServiceRequest[]>([]);
     const [loadingData, setLoadingData] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'bank' | 'profile'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'bank' | 'profile' | 'documents'>('overview');
     const [bankForm, setBankForm] = useState({ accountName: '', accountNumber: '', ifscCode: '' });
     const [isBankSubmitting, setIsBankSubmitting] = useState(false);
     const [copiedReferral, setCopiedReferral] = useState(false);
     const [isOnline, setIsOnline] = useState(true); // Availability toggle
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
+    const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
 
-    // Fetch electrician data
+    // Fetch electrician data - now supports both phone and electricianId
     useEffect(() => {
-        if (userProfile?.phone) {
+        // Try to fetch data if we have either phone OR electricianId
+        if (userProfile?.phone || userProfile?.electricianId) {
             fetchElectricianData();
+        } else if (userProfile && !userProfile.phone && !userProfile.electricianId) {
+            // User is authenticated but has neither phone nor electricianId
+            // This means they're not a registered electrician
+            setLoadingData(false);
+            setFetchError('no_electrician_data');
         }
     }, [userProfile]);
 
     const fetchElectricianData = async () => {
-        if (!userProfile?.phone) return;
+        // Build query params - prefer phone but fallback to electricianId
+        const queryParams = new URLSearchParams();
+        if (userProfile?.phone) {
+            queryParams.set('phone', userProfile.phone);
+        }
+        if (userProfile?.electricianId) {
+            queryParams.set('electricianId', userProfile.electricianId);
+        }
+
+        if (!queryParams.toString()) {
+            setFetchError('no_identifier');
+            setLoadingData(false);
+            return;
+        }
 
         setLoadingData(true);
+        setFetchError(null);
+
         try {
-            const response = await fetch(`/api/electrician/profile?phone=${userProfile.phone}`);
+            const response = await fetch(`/api/electrician/profile?${queryParams.toString()}`);
             const data = await response.json();
 
             if (data.success) {
@@ -87,21 +113,30 @@ export default function ElectricianDashboard() {
                     });
                 }
             } else {
-                router.push('/electrician');
+                console.error('Failed to fetch electrician profile:', data.error);
+                setFetchError('not_found');
             }
         } catch (error) {
             console.error('Failed to fetch electrician data:', error);
+            setFetchError('network_error');
         } finally {
             setLoadingData(false);
         }
     };
 
-    // Redirect if not authenticated
+    // Redirect if not authenticated (but don't redirect for missing phone if they have electricianId)
     useEffect(() => {
-        if (!isLoading && !isAuthenticated) {
-            router.push('/');
+        if (!isLoading) {
+            if (!isAuthenticated) {
+                router.push('/');
+            } else if (userProfile && !userProfile.phone && !userProfile.isElectrician && !userProfile.electricianId) {
+                // Authenticated but not an electrician at all
+                console.log('User authenticated but not an electrician, redirecting to registration');
+                showToast('Please complete your electrician registration', 'info');
+                router.push('/electrician');
+            }
         }
-    }, [isLoading, isAuthenticated, router]);
+    }, [isLoading, isAuthenticated, userProfile, router, showToast]);
 
     if (isLoading || loadingData) {
         return (
@@ -114,7 +149,48 @@ export default function ElectricianDashboard() {
         );
     }
 
-    if (!electricianData) return null;
+    // Show error state if we couldn't fetch electrician data
+    if (fetchError || !electricianData) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-emerald-900 to-slate-900">
+                <div className="text-center max-w-md mx-auto px-4">
+                    <span className="text-6xl mb-6 block">⚠️</span>
+                    <h1 className="text-2xl font-bold text-white mb-4">
+                        {fetchError === 'not_found' ? 'Electrician Profile Not Found' :
+                            fetchError === 'no_electrician_data' ? 'Registration Required' :
+                                fetchError === 'network_error' ? 'Connection Error' :
+                                    'Unable to Load Dashboard'}
+                    </h1>
+                    <p className="text-gray-400 mb-8">
+                        {fetchError === 'not_found'
+                            ? "We couldn't find your electrician registration. Please complete the registration process."
+                            : fetchError === 'no_electrician_data'
+                                ? "Please complete your electrician registration to access the dashboard."
+                                : fetchError === 'network_error'
+                                    ? "There was a problem connecting to our servers. Please try again."
+                                    : "There was an issue loading your dashboard. Please try again or contact support."}
+                    </p>
+                    <div className="flex flex-col gap-3">
+                        <Button
+                            onClick={() => router.push('/electrician')}
+                            className="bg-emerald-500 hover:bg-emerald-600"
+                        >
+                            {fetchError === 'not_found' || fetchError === 'no_electrician_data'
+                                ? '📝 Register as Electrician'
+                                : '🔄 Try Again'}
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={() => router.push('/')}
+                            className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                        >
+                            ← Go Home
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const copyReferralLink = () => {
         const link = `${window.location.origin}/electrician?ref=${electricianData.referralCode}`;
@@ -240,6 +316,39 @@ export default function ElectricianDashboard() {
         }
     };
 
+    // Document Upload Logic
+    // Document Upload Logic
+
+    const handleDocumentUpload = async (field: 'aadhaarFront' | 'aadhaarBack' | 'panFront', file: File | null) => {
+        if (!file || !electricianData) return;
+
+        setUploadingDoc(field);
+        try {
+            const formData = new FormData();
+            formData.append('electricianId', electricianData.electricianId);
+            formData.append(field, file);
+
+            const response = await fetch('/api/electrician/update-documents', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showToast('Document uploaded successfully', 'success');
+                fetchElectricianData(); // Refresh data
+            } else {
+                showToast(data.error || 'Upload failed', 'error');
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            showToast('Upload failed', 'error');
+        } finally {
+            setUploadingDoc(null);
+        }
+    };
+
     const handleLogout = async () => {
         await logout();
         router.push('/');
@@ -330,6 +439,7 @@ export default function ElectricianDashboard() {
                         { id: 'overview', label: 'Overview', icon: '📊' },
                         { id: 'requests', label: 'Service Requests', icon: '🔧' },
                         { id: 'bank', label: 'Bank Details', icon: '🏦' },
+                        { id: 'documents', label: 'KYC Documents', icon: '📄' },
                         { id: 'profile', label: 'My Profile', icon: '👤' },
                     ].map((tab) => (
                         <button
@@ -438,13 +548,13 @@ export default function ElectricianDashboard() {
                                         <span className="text-2xl">⚙️</span>
                                         <span className="text-sm text-purple-200 font-medium">Edit Profile</span>
                                     </button>
-                                    <Link
-                                        href="/technician-terms-and-conditions"
-                                        className="flex flex-col items-center gap-2 p-4 bg-gray-500/10 hover:bg-gray-500/20 rounded-xl transition-all border border-gray-500/20"
+                                    <button
+                                        onClick={() => setActiveTab('documents')}
+                                        className="flex flex-col items-center gap-2 p-4 bg-blue-500/10 hover:bg-blue-500/20 rounded-xl transition-all border border-blue-500/20"
                                     >
                                         <span className="text-2xl">📄</span>
-                                        <span className="text-sm text-gray-200 font-medium">Terms & Conditions</span>
-                                    </Link>
+                                        <span className="text-sm text-blue-200 font-medium">KYC Docs</span>
+                                    </button>
                                 </div>
                             </div>
 
@@ -714,6 +824,150 @@ export default function ElectricianDashboard() {
                                     </p>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* Documents Tab */}
+                {activeTab === 'documents' && (
+                    <div className="max-w-2xl mx-auto">
+                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+                            <h2 className="text-2xl font-bold text-white mb-2">KYC Documents</h2>
+                            <p className="text-emerald-100/60 mb-8">Upload documents to complete your verification.</p>
+
+                            <div className="space-y-8">
+                                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
+                                    <h3 className="text-emerald-300 font-semibold mb-2">Instructions</h3>
+                                    <ul className="list-disc list-inside text-sm text-emerald-100/70 space-y-1">
+                                        <li>Photos must be clear and readable</li>
+                                        <li>Files must be JPG or PNG format</li>
+                                        <li>Maximum file size is 5MB</li>
+                                    </ul>
+                                </div>
+
+                                <div className="space-y-6">
+                                    {/* Aadhaar Front */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="text-sm font-medium text-emerald-100/80">Aadhaar Card (Front)</label>
+                                            {electricianData.aadhaarFrontURL && !electricianData.aadhaarFrontURL.startsWith('UPLOAD_ERROR') && (
+                                                <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-full border border-emerald-500/20">✓ Uploaded</span>
+                                            )}
+                                        </div>
+                                        {electricianData.aadhaarFrontURL && !electricianData.aadhaarFrontURL.startsWith('UPLOAD_ERROR') ? (
+                                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                                <img src={electricianData.aadhaarFrontURL} alt="Aadhaar Front" className="w-full h-48 object-cover" />
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <a href={electricianData.aadhaarFrontURL} target="_blank" rel="noopener noreferrer" className="text-white hover:underline">View Full Image</a>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="relative">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => handleDocumentUpload('aadhaarFront', e.target.files?.[0] || null)}
+                                                    disabled={uploadingDoc === 'aadhaarFront'}
+                                                    className="block w-full text-sm text-gray-400
+                                                        file:mr-4 file:py-2 file:px-4
+                                                        file:rounded-full file:border-0
+                                                        file:text-sm file:font-semibold
+                                                        file:bg-emerald-500 file:text-white
+                                                        hover:file:bg-emerald-600
+                                                        cursor-pointer bg-white/5 border border-white/10 rounded-xl p-2
+                                                    "
+                                                />
+                                                {uploadingDoc === 'aadhaarFront' && (
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Aadhaar Back */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="text-sm font-medium text-emerald-100/80">Aadhaar Card (Back)</label>
+                                            {electricianData.aadhaarBackURL && !electricianData.aadhaarBackURL.startsWith('UPLOAD_ERROR') && (
+                                                <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-full border border-emerald-500/20">✓ Uploaded</span>
+                                            )}
+                                        </div>
+                                        {electricianData.aadhaarBackURL && !electricianData.aadhaarBackURL.startsWith('UPLOAD_ERROR') ? (
+                                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                                <img src={electricianData.aadhaarBackURL} alt="Aadhaar Back" className="w-full h-48 object-cover" />
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <a href={electricianData.aadhaarBackURL} target="_blank" rel="noopener noreferrer" className="text-white hover:underline">View Full Image</a>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="relative">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => handleDocumentUpload('aadhaarBack', e.target.files?.[0] || null)}
+                                                    disabled={uploadingDoc === 'aadhaarBack'}
+                                                    className="block w-full text-sm text-gray-400
+                                                        file:mr-4 file:py-2 file:px-4
+                                                        file:rounded-full file:border-0
+                                                        file:text-sm file:font-semibold
+                                                        file:bg-emerald-500 file:text-white
+                                                        hover:file:bg-emerald-600
+                                                        cursor-pointer bg-white/5 border border-white/10 rounded-xl p-2
+                                                    "
+                                                />
+                                                {uploadingDoc === 'aadhaarBack' && (
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* PAN Card */}
+                                    <div>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="text-sm font-medium text-emerald-100/80">PAN Card</label>
+                                            {electricianData.panFrontURL && !electricianData.panFrontURL.startsWith('UPLOAD_ERROR') && (
+                                                <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-full border border-emerald-500/20">✓ Uploaded</span>
+                                            )}
+                                        </div>
+                                        {electricianData.panFrontURL && !electricianData.panFrontURL.startsWith('UPLOAD_ERROR') ? (
+                                            <div className="relative group rounded-xl overflow-hidden border border-white/10">
+                                                <img src={electricianData.panFrontURL} alt="PAN Card" className="w-full h-48 object-cover" />
+                                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <a href={electricianData.panFrontURL} target="_blank" rel="noopener noreferrer" className="text-white hover:underline">View Full Image</a>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="relative">
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => handleDocumentUpload('panFront', e.target.files?.[0] || null)}
+                                                    disabled={uploadingDoc === 'panFront'}
+                                                    className="block w-full text-sm text-gray-400
+                                                        file:mr-4 file:py-2 file:px-4
+                                                        file:rounded-full file:border-0
+                                                        file:text-sm file:font-semibold
+                                                        file:bg-emerald-500 file:text-white
+                                                        hover:file:bg-emerald-600
+                                                        cursor-pointer bg-white/5 border border-white/10 rounded-xl p-2
+                                                    "
+                                                />
+                                                {uploadingDoc === 'panFront' && (
+                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}

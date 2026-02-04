@@ -12,13 +12,13 @@ export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { isAuthenticated, userProfile, isLoading } = useAuth();
 
-  // Auto-redirect technicians to their dashboard
+  // Auto-redirect technicians to their dashboard (both verified and pending)
   useEffect(() => {
     if (!isLoading && isAuthenticated && userProfile) {
-      if (userProfile.isElectrician && userProfile.electricianStatus === 'VERIFIED') {
+      if (userProfile.isElectrician) {
+        // All electricians (VERIFIED, PENDING, etc.) go to dashboard
+        // The dashboard will show appropriate UI based on their verification status
         router.push('/electrician-dashboard');
-      } else if (userProfile.isElectrician && userProfile.electricianStatus === 'PENDING') {
-        router.push('/electrician-pending');
       }
     }
   }, [isLoading, isAuthenticated, userProfile, router]);
@@ -342,7 +342,8 @@ export default function Home() {
               </>
             ) : null}
 
-            {isAuthenticated && userProfile?.userType === 'electrician' && userProfile?.electricianStatus === 'VERIFIED' && (
+            {/* Show Dashboard button for ALL electricians (verified and pending) */}
+            {isAuthenticated && userProfile?.isElectrician && (
               <Link href="/electrician-dashboard">
                 <Button variant="secondary" size="lg" className="w-full sm:w-auto">
                   Go to Dashboard

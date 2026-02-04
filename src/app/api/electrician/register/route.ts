@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
 
         // Extract form fields
         const name = formData.get('name') as string;
+        const email = formData.get('email') as string || '';
         const phonePrimary = formData.get('phonePrimary') as string;
         const phoneSecondary = formData.get('phoneSecondary') as string || '';
         const houseNo = formData.get('houseNo') as string;
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
         const bankIfscCode = formData.get('bankIfscCode') as string || '';
 
         // Validate required fields
-        if (!name || !phonePrimary || !houseNo || !area || !city || !state || !pincode) {
+        if (!name || !email || !phonePrimary || !houseNo || !area || !city || !state || !pincode) {
             return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
         }
 
@@ -44,49 +45,13 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Get uploaded files
-        const aadhaarFrontFile = formData.get('aadhaarFront') as File | null;
-        const aadhaarBackFile = formData.get('aadhaarBack') as File | null;
-        const panFrontFile = formData.get('panFront') as File | null;
-
-        // Initialize URLs
-        let aadhaarFrontURL = '';
-        let aadhaarBackURL = '';
-        let panFrontURL = '';
-
-        // Upload files to Cloudinary
-        try {
-            // Upload Aadhaar Front
-            if (aadhaarFrontFile && aadhaarFrontFile.size > 0) {
-                const buffer = Buffer.from(await aadhaarFrontFile.arrayBuffer());
-                aadhaarFrontURL = await uploadKYCDocument(buffer, 'aadhaar_front', electricianId);
-                console.log('Aadhaar front uploaded:', aadhaarFrontURL);
-            }
-
-            // Upload Aadhaar Back
-            if (aadhaarBackFile && aadhaarBackFile.size > 0) {
-                const buffer = Buffer.from(await aadhaarBackFile.arrayBuffer());
-                aadhaarBackURL = await uploadKYCDocument(buffer, 'aadhaar_back', electricianId);
-                console.log('Aadhaar back uploaded:', aadhaarBackURL);
-            }
-
-            // Upload PAN
-            if (panFrontFile && panFrontFile.size > 0) {
-                const buffer = Buffer.from(await panFrontFile.arrayBuffer());
-                panFrontURL = await uploadKYCDocument(buffer, 'pan', electricianId);
-                console.log('PAN uploaded:', panFrontURL);
-            }
-
-        } catch (uploadError) {
-            console.error('File upload error:', uploadError);
-            // Store error message but continue with registration
-            const errorMsg = uploadError instanceof Error ? uploadError.message : 'Upload failed';
-            if (aadhaarFrontFile && !aadhaarFrontURL) aadhaarFrontURL = `UPLOAD_ERROR: ${errorMsg}`;
-            if (aadhaarBackFile && !aadhaarBackURL) aadhaarBackURL = `UPLOAD_ERROR: ${errorMsg}`;
-            if (panFrontFile && !panFrontURL) panFrontURL = `UPLOAD_ERROR: ${errorMsg}`;
-        }
+        // Initialize URLs (no longer uploaded during registration)
+        const aadhaarFrontURL = '';
+        const aadhaarBackURL = '';
+        const panFrontURL = '';
 
         // Prepare row data matching the sheet columns
+        // Note: Email is added at the end to enable email-based lookup for social logins
         const rowData = [
             getTimestamp(),           // Timestamp
             electricianId,            // ElectricianID
@@ -109,6 +74,7 @@ export async function POST(request: NextRequest) {
             'PENDING',                // Status
             '0',                      // TotalReferrals
             '0',                      // WalletBalance
+            email,                    // Email (for social login matching)
         ];
 
         // Append to Google Sheets - Electricians
@@ -125,6 +91,36 @@ export async function POST(request: NextRequest) {
                 'PENDING',            // Status
             ];
             await appendRow(SHEET_TABS.BANK_DETAILS, bankRowData);
+        }
+
+        // Sync phone number to Users sheet if email is provided (critical for social logins)
+        if (email) {
+            try {
+                // We need to import getRows and updateRow at the top, they are already imported from 'google-sheets' but ensure they are available
+                // Importing them dynamically here or assuming they are available from the top import
+                const { getRows, updateRow } = await import('@/lib/google-sheets');
+                const userRows = await getRows(SHEET_TABS.USERS);
+
+                if (userRows.length > 0) {
+                    const headers = userRows[0];
+                    const emailIndex = headers.indexOf('Email');
+                    const phoneIndex = headers.indexOf('Phone');
+
+                    if (emailIndex !== -1 && phoneIndex !== -1) {
+                        for (let i = 1; i < userRows.length; i++) {
+                            if (userRows[i][emailIndex] === email) {
+                                // Update phone number: i + 1 for 1-based row index, phoneIndex is 0-based column index
+                                await updateRow(SHEET_TABS.USERS, i + 1, phoneIndex, phonePrimary);
+                                console.log(`Updated phone for user ${email}`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (syncError) {
+                console.error('Failed to sync phone to Users sheet:', syncError);
+                // Non-blocking error
+            }
         }
 
         return NextResponse.json({

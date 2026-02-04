@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows, SHEET_TABS, updateRow } from '@/lib/google-sheets';
+import { getRows, SHEET_TABS, updateRow, appendRow, ensureSheet } from '@/lib/google-sheets';
 import { ELECTRICIAN_STATUS } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
@@ -34,6 +34,17 @@ export async function POST(request: NextRequest) {
 
         // Update the status (column S = index 18, row number = rowIndex + 1 for 1-indexing)
         await updateRow(SHEET_TABS.ELECTRICIANS, rowIndex + 1, 18, status);
+
+        // If status is VERIFIED, copy to Verified Technicians sheet
+        if (status === 'VERIFIED') {
+            await ensureSheet(SHEET_TABS.VERIFIED_TECHNICIANS);
+            const rowData = rows[rowIndex];
+            // Columns: Timestamp, ElectricianID, Name, Phone, City, Area, State
+            // Adjust based on your actual sheet structure
+            // Assuming we copy the whole row or specific important fields
+            // Let's copy the entire row for full record
+            await appendRow(SHEET_TABS.VERIFIED_TECHNICIANS, rowData);
+        }
 
         return NextResponse.json({
             success: true,

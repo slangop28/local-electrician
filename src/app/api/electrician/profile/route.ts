@@ -15,10 +15,11 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const phone = searchParams.get('phone');
+        const searchElectricianId = searchParams.get('electricianId');
 
-        if (!phone) {
+        if (!phone && !searchElectricianId) {
             return NextResponse.json(
-                { success: false, error: 'Phone number is required' },
+                { success: false, error: 'Phone number or electricianId is required' },
                 { status: 400 }
             );
         }
@@ -32,12 +33,16 @@ export async function GET(request: NextRequest) {
 
         for (let i = 1; i < electricianRows.length; i++) {
             const row = electricianRows[i];
-            if (row[headers.indexOf('PhonePrimary')] === phone) {
-                electricianId = row[headers.indexOf('ElectricianID')];
+            const rowPhone = row[headers.indexOf('PhonePrimary')];
+            const rowId = row[headers.indexOf('ElectricianID')];
+
+            // Match by phone OR by electricianId
+            if ((phone && rowPhone === phone) || (searchElectricianId && rowId === searchElectricianId)) {
+                electricianId = rowId;
                 electricianData = {
                     electricianId,
                     name: row[headers.indexOf('NameAsPerAadhaar')],
-                    phonePrimary: row[headers.indexOf('PhonePrimary')],
+                    phonePrimary: rowPhone,
                     phoneSecondary: row[headers.indexOf('PhoneSecondary')] || '',
                     city: row[headers.indexOf('City')],
                     area: row[headers.indexOf('Area')],
@@ -47,6 +52,9 @@ export async function GET(request: NextRequest) {
                     referralCode: row[headers.indexOf('ReferralCode')],
                     totalReferrals: parseInt(row[headers.indexOf('TotalReferrals')] || '0'),
                     walletBalance: parseFloat(row[headers.indexOf('WalletBalance')] || '0'),
+                    aadhaarFrontURL: row[headers.indexOf('AadhaarFrontURL')] || null,
+                    aadhaarBackURL: row[headers.indexOf('AadhaarBackURL')] || null,
+                    panFrontURL: row[headers.indexOf('PanFrontURL')] || null,
                     servicesCompleted: 0 // Will be calculated below
                 };
                 break;

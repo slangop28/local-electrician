@@ -136,10 +136,10 @@ export default function OTPLoginModal({
         onClose();
 
         // Check if user is a registered electrician (regardless of selected userType)
-        if (data.user.isElectrician && data.user.electricianStatus === 'VERIFIED') {
+        if (data.user.isElectrician) {
+          // Redirect BOTH Verified and Pending users to the dashboard
+          // The dashboard itself will handle the limited view for pending users
           window.location.href = '/electrician-dashboard';
-        } else if (data.user.isElectrician && data.user.electricianStatus === 'PENDING') {
-          window.location.href = '/electrician-pending';
         } else if (userType === 'electrician' && !data.user.isElectrician) {
           window.location.href = '/electrician';
         } else {
@@ -184,10 +184,8 @@ export default function OTPLoginModal({
 
         // Check if user is a registered electrician (regardless of selected userType)
         // This ensures returning technicians are always redirected to their dashboard
-        if (data.user.isElectrician && data.user.electricianStatus === 'VERIFIED') {
+        if (data.user.isElectrician) {
           window.location.href = '/electrician-dashboard';
-        } else if (data.user.isElectrician && data.user.electricianStatus === 'PENDING') {
-          window.location.href = '/electrician-pending';
         } else if (userType === 'electrician' && !data.user.isElectrician) {
           // New electrician who hasn't registered yet
           window.location.href = '/electrician';
@@ -231,10 +229,8 @@ export default function OTPLoginModal({
         resetForm();
         onClose();
 
-        if (data.user.isElectrician && data.user.electricianStatus === 'VERIFIED') {
+        if (data.user.isElectrician) {
           window.location.href = '/electrician-dashboard';
-        } else if (data.user.isElectrician && data.user.electricianStatus === 'PENDING') {
-          window.location.href = '/electrician-pending';
         } else if (userType === 'electrician' && !data.user.isElectrician) {
           window.location.href = '/electrician';
         } else {

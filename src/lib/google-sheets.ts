@@ -27,6 +27,7 @@ export const SHEET_TABS = {
     REFERRALS: 'Referrals',
     USERS: 'Users',
     BANK_DETAILS: 'Bank Details',
+    VERIFIED_TECHNICIANS: 'Verified Electricians', // New sheet for verified electricians
 } as const;
 
 // Append a row to a specific sheet tab
@@ -163,10 +164,35 @@ export async function ensureSheet(tabName: string) {
             // Add headers if it's BANK_DETAILS
             if (tabName === SHEET_TABS.BANK_DETAILS) {
                 await appendRow(tabName, ['Timestamp', 'ElectricianId', 'AccountName', 'AccountNumber', 'IFSCCode', 'Status']);
+            } else if (tabName === SHEET_TABS.VERIFIED_TECHNICIANS) {
+                // Fetch Electricians headers to copy them or define a standard set
+                // For simplicity, we'll try to get headers from the Electricians sheet dynamically if possible, or use a hardcoded set that matches
+                // Since we can't easily fetch other sheets here without risk of loops/errors, let's use a standard comprehensive set or just empty because we append the whole row from Electricians which INCLUDES the timestamp and ID usually.
+                // However, appendRow usually appends DATA. If we append a row from Electricians, it presumably has data values.
+                // If we create a NEW sheet, we want the first row to be headers.
+                // When we copy from Electricians, we copy the specific electrician's row, not the header row.
+                // So we SHOULD add headers here.
+                // Assuming Electricians sheet structure:
+                // [Timestamp, ElectricianID, Name, Phone, ... ]
+                // It's safer to fetch the Electricians sheet headers once and copy them, but to keep it simple and fast:
+                // We'll define a generic set or just let the first row define columns (which is bad for headers).
+                // Let's add a generic set based on known columns.
+                await appendRow(tabName, ['Timestamp', 'ElectricianID', 'NameAsPerAadhaar', 'PhonePrimary', 'PhoneSecondary', 'AadhaarFrontURL', 'AadhaarBackURL', 'PanFrontURL', 'Address', 'City', 'Area', 'State', 'Pincode', 'Latitude', 'Longitude', 'GeocodingStatus', 'TotalReferrals', 'ReferralCode', 'Status', 'WalletBalance']);
             }
         }
     } catch (error) {
         console.error(`Error ensuring sheet ${tabName}:`, error);
         // Don't throw, let the caller try and fail if needed
     }
+}
+
+// Clear all data from a specific sheet tab
+export async function clearSheet(tabName: string) {
+    const sheets = getSheetsClient();
+    const spreadsheetId = process.env.GOOGLE_SHEETS_ID;
+
+    await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: tabName,
+    });
 }

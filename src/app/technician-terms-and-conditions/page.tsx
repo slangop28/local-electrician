@@ -5,10 +5,15 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Input } from '@/components/ui';
 import { generateId, generateReferralCode } from '@/lib/utils';
+import { useAuth } from '@/lib/AuthContext';
 
 interface StoredData {
   name: string;
+  email: string;
   phonePrimary: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfscCode?: string;
   phoneSecondary: string;
   houseNo: string;
   area: string;
@@ -44,6 +49,7 @@ function base64ToFile(base64: string, filename: string, mimeType: string): File 
 function TechnicianTermsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { userProfile, login } = useAuth();
   const fromRegistration = searchParams.get('fromRegistration') === 'true';
 
   const [agreed, setAgreed] = useState(false);
@@ -53,11 +59,7 @@ function TechnicianTermsContent() {
   const [generatedReferralCode, setGeneratedReferralCodeState] = useState('');
   const [storedData, setStoredData] = useState<StoredData | null>(null);
 
-  // Bank details form
-  const [bankAccountName, setBankAccountName] = useState('');
-  const [bankAccountNumber, setBankAccountNumber] = useState('');
-  const [bankIfscCode, setBankIfscCode] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+
 
   useEffect(() => {
     if (fromRegistration) {
@@ -71,27 +73,10 @@ function TechnicianTermsContent() {
     }
   }, [fromRegistration, router]);
 
-  const validateBankDetails = () => {
-    // If all fields are empty, it's valid (skipped)
-    if (!bankAccountName.trim() && !bankAccountNumber.trim() && !bankIfscCode.trim()) {
-      setErrors({});
-      return true;
-    }
 
-    const newErrors: Record<string, string> = {};
-
-    if (!bankAccountName.trim()) newErrors.bankAccountName = 'Account holder name is required';
-    if (!bankAccountNumber.trim()) newErrors.bankAccountNumber = 'Account number is required';
-    else if (!/^\d{9,18}$/.test(bankAccountNumber)) newErrors.bankAccountNumber = 'Enter valid account number (9-18 digits)';
-    if (!bankIfscCode.trim()) newErrors.bankIfscCode = 'IFSC code is required';
-    else if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(bankIfscCode.toUpperCase())) newErrors.bankIfscCode = 'Enter valid IFSC code';
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
 
   const handleSubmitRegistration = async () => {
-    if (!validateBankDetails() || !storedData) return;
+    if (!storedData) return;
 
     setIsSubmitting(true);
 
@@ -103,6 +88,7 @@ function TechnicianTermsContent() {
       // Create form data for file upload
       const submitData = new FormData();
       submitData.append('name', storedData.name);
+      submitData.append('email', storedData.email);
       submitData.append('phonePrimary', storedData.phonePrimary);
       submitData.append('phoneSecondary', storedData.phoneSecondary);
       submitData.append('houseNo', storedData.houseNo);
@@ -116,9 +102,9 @@ function TechnicianTermsContent() {
       submitData.append('referredBy', storedData.referralCode);
       submitData.append('electricianId', electricianId);
       submitData.append('referralCode', referralCode);
-      submitData.append('bankAccountName', bankAccountName);
-      submitData.append('bankAccountNumber', bankAccountNumber);
-      submitData.append('bankIfscCode', bankIfscCode.toUpperCase());
+      submitData.append('bankAccountName', storedData.bankAccountName || '');
+      submitData.append('bankAccountNumber', storedData.bankAccountNumber || '');
+      submitData.append('bankIfscCode', (storedData.bankIfscCode || '').toUpperCase());
       submitData.append('agreedToTerms', 'true');
 
       // Convert base64 back to files
@@ -147,6 +133,20 @@ function TechnicianTermsContent() {
         sessionStorage.removeItem('technicianRegistrationData');
         setGeneratedId(electricianId);
         setGeneratedReferralCodeState(referralCode);
+
+        // IMPORTANT: Update local user profile to Electrician status immediately
+        if (userProfile) {
+          const updatedProfile = {
+            ...userProfile,
+            isElectrician: true,
+            electricianStatus: 'PENDING' as 'PENDING' | 'VERIFIED' | 'REJECTED',
+            electricianId: electricianId,
+            // Ensure phone is updated if it was missing
+            phone: storedData.phonePrimary
+          };
+          login(updatedProfile);
+        }
+
         setIsSuccess(true);
       } else {
         alert(result.error || 'Registration failed. Please try again.');
@@ -169,7 +169,7 @@ function TechnicianTermsContent() {
   // Success screen
   if (isSuccess) {
     setTimeout(() => {
-      window.location.href = '/electrician-pending';
+      window.location.href = '/electrician-dashboard';
     }, 3000);
 
     return (
@@ -608,42 +608,7 @@ function TechnicianTermsContent() {
             </section>
           </div>
 
-          {/* Bank Details Form - Only shown when coming from registration */}
-          {fromRegistration && storedData && (
-            <div className="mt-12 p-6 bg-blue-50 rounded-lg border border-blue-200">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Bank Details for Payments (Optional)</h3>
-              <p className="text-gray-600 mb-6">
-                Please provide your bank details for receiving payments. You can add this later.
-              </p>
 
-              <div className="space-y-4">
-                <Input
-                  label="Account Holder Name"
-                  value={bankAccountName}
-                  onChange={(e) => setBankAccountName(e.target.value)}
-                  error={errors.bankAccountName}
-                  helpText="Name as per bank records"
-                />
-
-                <Input
-                  label="Bank Account Number"
-                  type="text"
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 18))}
-                  error={errors.bankAccountNumber}
-                  helpText="9-18 digit account number"
-                />
-
-                <Input
-                  label="IFSC Code"
-                  value={bankIfscCode}
-                  onChange={(e) => setBankIfscCode(e.target.value.toUpperCase().slice(0, 11))}
-                  error={errors.bankIfscCode}
-                  helpText="11-character IFSC code (e.g., SBIN0001234)"
-                />
-              </div>
-            </div>
-          )}
 
           {/* Agreement Checkbox */}
           <div className="mt-12 p-6 bg-green-50 rounded-lg">

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useAuth } from '@/lib/AuthContext';
 import { Button, Input, StepIndicator, FileUpload, Card } from '@/components/ui';
 import { validatePhone, validatePincode, generateId, generateReferralCode, cn } from '@/lib/utils';
 
@@ -10,6 +11,7 @@ import { validatePhone, validatePincode, generateId, generateReferralCode, cn } 
 type StepData = {
     // Step 1
     name: string;
+    email: string;
     phonePrimary: string;
     phoneSecondary: string;
     // Step 2
@@ -21,11 +23,7 @@ type StepData = {
     pincode: string;
     lat: number | null;
     lng: number | null;
-    // Step 3
-    aadhaarFront: File | null;
-    aadhaarBack: File | null;
-    panFront: File | null;
-    // Step 4 - Bank Details
+    // Step 3 - Bank Details (now step 3, but handled as part of final submission)
     bankAccountName: string;
     bankAccountNumber: string;
     bankIfscCode: string;
@@ -33,7 +31,7 @@ type StepData = {
     referralCode: string;
 };
 
-const STEPS = ['Personal Details', 'Address', 'KYC Upload'];
+const STEPS = ['Personal Details', 'Address', 'Bank Details'];
 const INDIAN_STATES = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
     'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
@@ -53,6 +51,7 @@ export default function ElectricianRegistrationPage() {
 
     const [formData, setFormData] = useState<StepData>({
         name: '',
+        email: '',
         phonePrimary: '',
         phoneSecondary: '',
         houseNo: '',
@@ -63,19 +62,10 @@ export default function ElectricianRegistrationPage() {
         pincode: '',
         lat: null,
         lng: null,
-        aadhaarFront: null,
-        aadhaarBack: null,
-        panFront: null,
         bankAccountName: '',
         bankAccountNumber: '',
         bankIfscCode: '',
         referralCode: '',
-    });
-
-    const [previews, setPreviews] = useState({
-        aadhaarFront: null as string | null,
-        aadhaarBack: null as string | null,
-        panFront: null as string | null,
     });
 
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -96,28 +86,14 @@ export default function ElectricianRegistrationPage() {
         }
     };
 
-    // Handle file upload
-    const handleFileUpload = (field: 'aadhaarFront' | 'aadhaarBack' | 'panFront', file: File | null) => {
-        updateField(field, file);
-
-        // Generate preview
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setPreviews(prev => ({ ...prev, [field]: e.target?.result as string }));
-            };
-            reader.readAsDataURL(file);
-        } else {
-            setPreviews(prev => ({ ...prev, [field]: null }));
-        }
-    };
-
     // Validate step
     const validateStep = (step: number): boolean => {
         const newErrors: Record<string, string> = {};
 
         if (step === 0) {
             if (!formData.name.trim()) newErrors.name = 'Name is required';
+            if (!formData.email.trim()) newErrors.email = 'Email is required';
+            else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Enter valid email';
             if (!formData.phonePrimary) newErrors.phonePrimary = 'Phone is required';
             else if (!validatePhone(formData.phonePrimary)) newErrors.phonePrimary = 'Enter valid 10-digit phone';
             if (formData.phoneSecondary && !validatePhone(formData.phoneSecondary)) {
@@ -134,12 +110,7 @@ export default function ElectricianRegistrationPage() {
             else if (!validatePincode(formData.pincode)) newErrors.pincode = 'Enter valid 6-digit pincode';
         }
 
-        if (step === 2) {
-            // KYC documents are now optional as per user request
-            return true;
-        }
-
-        if (step === 3) {
+        if (step === 2) { // Bank Details
             // Bank Details are now optional as per user request
             // Validation removed. User can skip freely.
             return true;
@@ -149,25 +120,16 @@ export default function ElectricianRegistrationPage() {
         return Object.keys(newErrors).length === 0;
     };
 
-    // Convert file to base64 for storage
-    const fileToBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = error => reject(error);
-        });
-    };
-
     // Next step
     const handleNext = async () => {
         if (validateStep(currentStep)) {
-            // After KYC Upload step (step 2), redirect to T&C page
+            // After Bank Details step (step 2), redirect to T&C page
             if (currentStep === 2) {
                 // Store form data in sessionStorage before redirecting to T&C
                 try {
                     const dataToStore = {
                         name: formData.name,
+                        email: formData.email,
                         phonePrimary: formData.phonePrimary,
                         phoneSecondary: formData.phoneSecondary,
                         houseNo: formData.houseNo,
@@ -179,22 +141,16 @@ export default function ElectricianRegistrationPage() {
                         lat: formData.lat,
                         lng: formData.lng,
                         referralCode: formData.referralCode,
-                        aadhaarFrontBase64: formData.aadhaarFront ? await fileToBase64(formData.aadhaarFront) : null,
-                        aadhaarFrontName: formData.aadhaarFront?.name || null,
-                        aadhaarFrontType: formData.aadhaarFront?.type || null,
-                        aadhaarBackBase64: formData.aadhaarBack ? await fileToBase64(formData.aadhaarBack) : null,
-                        aadhaarBackName: formData.aadhaarBack?.name || null,
-                        aadhaarBackType: formData.aadhaarBack?.type || null,
-                        panFrontBase64: formData.panFront ? await fileToBase64(formData.panFront) : null,
-                        panFrontName: formData.panFront?.name || null,
-                        panFrontType: formData.panFront?.type || null,
+                        bankAccountName: formData.bankAccountName,
+                        bankAccountNumber: formData.bankAccountNumber,
+                        bankIfscCode: formData.bankIfscCode,
                     };
                     sessionStorage.setItem('technicianRegistrationData', JSON.stringify(dataToStore));
                     router.push('/technician-terms-and-conditions?fromRegistration=true');
                     return;
                 } catch (error) {
                     console.error('Error storing form data:', error);
-                    alert('Error processing documents. Please try again.');
+                    alert('Error processing data. Please try again.');
                     return;
                 }
             }
@@ -301,9 +257,22 @@ export default function ElectricianRegistrationPage() {
         }
     };
 
+    const { userProfile } = useAuth(); // Get user profile
+
+    // Auto-fill email and phone if available
+    useEffect(() => {
+        if (userProfile) {
+            setFormData(prev => ({
+                ...prev,
+                email: prev.email || userProfile.email || '',
+                phonePrimary: prev.phonePrimary || userProfile.phone || ''
+            }));
+        }
+    }, [userProfile]);
+
     // Submit form
     const handleSubmit = async () => {
-        if (!validateStep(3)) return;
+        if (!validateStep(2)) return; // Validate the last step (Bank Details)
 
         setIsSubmitting(true);
 
@@ -315,6 +284,7 @@ export default function ElectricianRegistrationPage() {
             // Create form data for file upload
             const submitData = new FormData();
             submitData.append('name', formData.name);
+            submitData.append('email', formData.email);
             submitData.append('phonePrimary', formData.phonePrimary);
             submitData.append('phoneSecondary', formData.phoneSecondary);
             submitData.append('houseNo', formData.houseNo);
@@ -331,10 +301,6 @@ export default function ElectricianRegistrationPage() {
             submitData.append('bankAccountName', formData.bankAccountName);
             submitData.append('bankAccountNumber', formData.bankAccountNumber);
             submitData.append('bankIfscCode', formData.bankIfscCode.toUpperCase());
-
-            if (formData.aadhaarFront) submitData.append('aadhaarFront', formData.aadhaarFront);
-            if (formData.aadhaarBack) submitData.append('aadhaarBack', formData.aadhaarBack);
-            if (formData.panFront) submitData.append('panFront', formData.panFront);
 
             const response = await fetch('/api/electrician/register', {
                 method: 'POST',
@@ -378,7 +344,7 @@ export default function ElectricianRegistrationPage() {
     if (isSuccess) {
         // Redirect to pending page after showing success briefly
         setTimeout(() => {
-            window.location.href = '/electrician-pending';
+            window.location.href = '/electrician-dashboard';
         }, 3000);
 
         return (
@@ -393,7 +359,7 @@ export default function ElectricianRegistrationPage() {
 
                         <h1 className="text-2xl font-bold text-glow mb-2">Registration Successful!</h1>
                         <p className="text-gray-400 mb-6">
-                            Your application is under review. We&apos;ll verify your KYC documents and notify you soon.
+                            Your application is under review. We&apos;ll verify your details and notify you soon.
                         </p>
 
                         <div className="bg-gray-800/50 rounded-xl p-4 mb-6">
@@ -457,6 +423,17 @@ export default function ElectricianRegistrationPage() {
                                 onChange={(e) => updateField('name', e.target.value)}
                                 error={errors.name}
                                 success={!!(touched.name && !errors.name && formData.name.length > 2)}
+                            />
+
+                            <Input
+                                label="Email Address"
+                                type="email"
+                                value={formData.email}
+                                onChange={(e) => updateField('email', e.target.value)}
+                                error={errors.email}
+                                success={!!(touched.email && !errors.email && /\S+@\S+\.\S+/.test(formData.email))}
+                                disabled={!!userProfile?.email} // Disable if auto-filled from login
+                                helpText={userProfile?.email ? "Linked to your login account" : "Required for login"}
                             />
 
                             <Input
@@ -586,39 +563,38 @@ export default function ElectricianRegistrationPage() {
                         </div>
                     )}
 
-                    {/* Step 3: KYC Upload */}
+                    {/* Step 3: Bank Details */}
                     {currentStep === 2 && (
                         <div className="space-y-6 animate-slide-up">
                             <div>
-                                <h2 className="text-2xl font-bold text-gray-900 mb-2">KYC Documents (Optional)</h2>
-                                <p className="text-gray-500">Upload clear photos of your documents if available. You can also do this later.</p>
+                                <h2 className="text-2xl font-bold text-gray-900 mb-2">Bank Details (Optional)</h2>
+                                <p className="text-gray-500">Provide your bank details for payments. You can add this later too.</p>
                             </div>
 
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
-                                <p className="text-sm text-yellow-800">
-                                    <span className="font-bold">Important:</span> Ensure all text is clearly visible. Blurry images may delay verification.
-                                </p>
-                            </div>
-
-                            <FileUpload
-                                label="Aadhaar Card - Front (Optional)"
-                                onChange={(file) => handleFileUpload('aadhaarFront', file)}
-                                preview={previews.aadhaarFront}
-                                error={errors.aadhaarFront}
+                            <Input
+                                label="Bank Account Holder Name"
+                                value={formData.bankAccountName}
+                                onChange={(e) => updateField('bankAccountName', e.target.value)}
+                                error={errors.bankAccountName}
+                                success={!!(touched.bankAccountName && !errors.bankAccountName && formData.bankAccountName.length > 0)}
                             />
 
-                            <FileUpload
-                                label="Aadhaar Card - Back (Optional)"
-                                onChange={(file) => handleFileUpload('aadhaarBack', file)}
-                                preview={previews.aadhaarBack}
-                                error={errors.aadhaarBack}
+                            <Input
+                                label="Bank Account Number"
+                                type="text"
+                                value={formData.bankAccountNumber}
+                                onChange={(e) => updateField('bankAccountNumber', e.target.value.replace(/\D/g, ''))}
+                                error={errors.bankAccountNumber}
+                                success={!!(touched.bankAccountNumber && !errors.bankAccountNumber && formData.bankAccountNumber.length > 0)}
                             />
 
-                            <FileUpload
-                                label="PAN Card (Optional)"
-                                onChange={(file) => handleFileUpload('panFront', file)}
-                                preview={previews.panFront}
-                                error={errors.panFront}
+                            <Input
+                                label="IFSC Code"
+                                type="text"
+                                value={formData.bankIfscCode}
+                                onChange={(e) => updateField('bankIfscCode', e.target.value.toUpperCase())}
+                                error={errors.bankIfscCode}
+                                success={!!(touched.bankIfscCode && !errors.bankIfscCode && formData.bankIfscCode.length > 0)}
                             />
                         </div>
                     )}
@@ -632,7 +608,7 @@ export default function ElectricianRegistrationPage() {
                         )}
 
                         <Button onClick={handleNext} className="flex-1">
-                            {currentStep === 2 ? 'Continue to Terms & Conditions →' : 'Continue →'}
+                            {currentStep === STEPS.length - 1 ? 'Continue to Terms & Conditions →' : 'Continue →'}
                         </Button>
                     </div>
                 </Card>
