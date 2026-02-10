@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AuthProvider } from "@/lib/AuthContext";
+import { GoogleMapsProvider } from "@/components/GoogleMapsProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -38,9 +39,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
         <AuthProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
+          <GoogleMapsProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </GoogleMapsProvider>
         </AuthProvider>
       </body>
     </html>

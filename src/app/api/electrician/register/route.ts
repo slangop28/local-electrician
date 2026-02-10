@@ -3,6 +3,7 @@ import { appendRow, SHEET_TABS } from '@/lib/google-sheets';
 import { geocodeAddress } from '@/lib/geocoding';
 import { getTimestamp } from '@/lib/utils';
 import { uploadKYCDocument } from '@/lib/cloudinary';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
     try {
@@ -50,8 +51,48 @@ export async function POST(request: NextRequest) {
         const aadhaarBackURL = '';
         const panFrontURL = '';
 
-        // Prepare row data matching the sheet columns
-        // Note: Email is added at the end to enable email-based lookup for social logins
+        // ===== 1. Write to Supabase (primary) =====
+        try {
+            await supabaseAdmin.from('electricians').insert({
+                electrician_id: electricianId,
+                name: name,
+                phone_primary: phonePrimary,
+                phone_secondary: phoneSecondary,
+                email: email,
+                house_no: houseNo,
+                area: area,
+                city: city,
+                district: district,
+                state: state,
+                pincode: pincode,
+                ...(lat && { latitude: parseFloat(lat) }),
+                ...(lng && { longitude: parseFloat(lng) }),
+                referral_code: referralCode,
+                referred_by: referredBy,
+                status: 'PENDING',
+                total_referrals: 0,
+                wallet_balance: 0
+            });
+        } catch (supaErr) {
+            console.error('[Registration] Supabase insert error:', supaErr);
+        }
+
+        // Save bank details to Supabase
+        if (bankAccountName && bankAccountNumber && bankIfscCode) {
+            try {
+                await supabaseAdmin.from('bank_details').insert({
+                    electrician_id: electricianId,
+                    account_holder_name: bankAccountName,
+                    account_number: bankAccountNumber,
+                    ifsc_code: bankIfscCode,
+                    status: 'PENDING'
+                });
+            } catch (bankErr) {
+                console.error('[Registration] Supabase bank details error:', bankErr);
+            }
+        }
+
+        // ===== 2. Write to Google Sheets (secondary) =====
         const rowData = [
             getTimestamp(),           // Timestamp
             electricianId,            // ElectricianID
@@ -77,7 +118,6 @@ export async function POST(request: NextRequest) {
             email,                    // Email (for social login matching)
         ];
 
-        // Append to Google Sheets - Electricians
         await appendRow(SHEET_TABS.ELECTRICIANS, rowData);
 
         // Save bank details to separate sheet
@@ -96,8 +136,6 @@ export async function POST(request: NextRequest) {
         // Sync phone number to Users sheet if email is provided (critical for social logins)
         if (email) {
             try {
-                // We need to import getRows and updateRow at the top, they are already imported from 'google-sheets' but ensure they are available
-                // Importing them dynamically here or assuming they are available from the top import
                 const { getRows, updateRow } = await import('@/lib/google-sheets');
                 const userRows = await getRows(SHEET_TABS.USERS);
 
@@ -109,7 +147,6 @@ export async function POST(request: NextRequest) {
                     if (emailIndex !== -1 && phoneIndex !== -1) {
                         for (let i = 1; i < userRows.length; i++) {
                             if (userRows[i][emailIndex] === email) {
-                                // Update phone number: i + 1 for 1-based row index, phoneIndex is 0-based column index
                                 await updateRow(SHEET_TABS.USERS, i + 1, phoneIndex, phonePrimary);
                                 console.log(`Updated phone for user ${email}`);
                                 break;
@@ -117,9 +154,14 @@ export async function POST(request: NextRequest) {
                         }
                     }
                 }
+
+                // Also update in Supabase users table
+                await supabaseAdmin
+                    .from('users')
+                    .update({ phone: phonePrimary })
+                    .eq('email', email);
             } catch (syncError) {
-                console.error('Failed to sync phone to Users sheet:', syncError);
-                // Non-blocking error
+                console.error('Failed to sync phone to Users:', syncError);
             }
         }
 
@@ -138,4 +180,3 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
     }
 }
-

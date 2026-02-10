@@ -118,8 +118,8 @@ export default function ServiceRequestPage({
             const data = await response.json();
 
             if (data.success) {
-                setRequestId(data.requestId);
-                setSuccess(true);
+                // Redirect to landing page — widget will show status
+                router.push('/');
             } else {
                 alert(data.error || 'Failed to submit request');
             }

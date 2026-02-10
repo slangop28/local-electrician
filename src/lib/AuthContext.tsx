@@ -41,7 +41,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedProfile = localStorage.getItem('userProfile');
         if (storedProfile) {
             try {
-                setUserProfile(JSON.parse(storedProfile));
+                const parsed = JSON.parse(storedProfile);
+                setUserProfile(parsed);
+
+                // Validate session in background (non-blocking)
+                const lastValidated = localStorage.getItem('lastSessionValidation');
+                const oneHour = 60 * 60 * 1000;
+                const shouldValidate = !lastValidated ||
+                    (Date.now() - parseInt(lastValidated)) > oneHour;
+
+                if (shouldValidate && parsed.id) {
+                    fetch('/api/auth/validate-session', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: parsed.id,
+                            phone: parsed.phone,
+                            email: parsed.email,
+                            userType: parsed.userType
+                        })
+                    })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success && data.valid && data.user) {
+                                // Update profile with latest data from DB
+                                const updatedProfile = { ...parsed, ...data.user };
+                                setUserProfile(updatedProfile);
+                                localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+                                localStorage.setItem('lastSessionValidation', Date.now().toString());
+                            } else if (data.success && !data.valid) {
+                                // User no longer exists in DB - force logout
+                                console.log('[Auth] Session invalid - user not found in DB');
+                                setUserProfile(null);
+                                localStorage.removeItem('userProfile');
+                                localStorage.removeItem('lastSessionValidation');
+                            }
+                        })
+                        .catch(err => {
+                            console.error('[Auth] Session validation failed:', err);
+                            // Keep the stored profile on network error (offline support)
+                        });
+                }
             } catch (e) {
                 console.error('Failed to parse stored profile:', e);
                 localStorage.removeItem('userProfile');
@@ -49,15 +89,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Listen to Firebase auth state changes
+        // IMPORTANT: Do NOT clear userProfile when Firebase token expires
         const unsubscribe = onAuthChange((firebaseUser) => {
             setUser(firebaseUser);
             setIsLoading(false);
-
-            // If user is logged out, clear profile
-            if (!firebaseUser) {
-                setUserProfile(null);
-                localStorage.removeItem('userProfile');
-            }
+            // We intentionally do NOT clear userProfile here.
+            // Session persistence is managed via localStorage + Supabase validation.
+            // Only explicit logout() clears the session.
         });
 
         return () => unsubscribe();

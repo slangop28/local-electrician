@@ -23,6 +23,7 @@ export default function CustomerDashboard() {
     const { userProfile } = useAuth();
     const { showToast } = useToast();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [locationAddress, setLocationAddress] = useState(''); // Display detected location
     const [address, setAddress] = useState('');
     const [electricians, setElectricians] = useState<Electrician[]>([]);
     const [loading, setLoading] = useState(false);
@@ -82,8 +83,8 @@ export default function CustomerDashboard() {
 
         if (userProfile?.id) {
             fetchRequest();
-            // Poll every 5 seconds
-            intervalId = setInterval(fetchRequest, 5000);
+            // Poll every 3 seconds for faster real-time updates
+            intervalId = setInterval(fetchRequest, 3000);
         }
 
         return () => {
@@ -147,11 +148,26 @@ export default function CustomerDashboard() {
                 maximumAge: 300000 // Accept cached position up to 5 minutes old
             };
 
-            const onSuccess = (position: GeolocationPosition) => {
-                setLocation({
+            const onSuccess = async (position: GeolocationPosition) => {
+                const coords = {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
-                });
+                };
+                setLocation(coords);
+                console.log('Location detected:', coords);
+
+                // Fetch address for the detected location
+                try {
+                    const response = await fetch(`/api/geocode?lat=${coords.lat}&lng=${coords.lng}`);
+                    const data = await response.json();
+                    if (data.success && data.address) {
+                        setLocationAddress(data.address);
+                        console.log('Address:', data.address);
+                    }
+                } catch (err) {
+                    console.error('Failed to get address:', err);
+                }
+
                 setGettingLocation(false);
             };
 
@@ -208,6 +224,8 @@ export default function CustomerDashboard() {
 
             if (data.lat && data.lng) {
                 setLocation({ lat: data.lat, lng: data.lng });
+                setLocationAddress(data.formattedAddress || address);
+                console.log('Address search result:', { lat: data.lat, lng: data.lng, address: data.formattedAddress });
             } else {
                 setError('Could not find location. Please try a different address.');
             }
@@ -262,6 +280,21 @@ export default function CustomerDashboard() {
                         </div>
                         <span className="font-bold text-gray-900">Local Electrician</span>
                     </Link>
+
+                    {/* Center Navigation */}
+                    <div className="flex items-center gap-3">
+                        <Link href="/">
+                            <Button variant="outline" size="sm" className="flex items-center gap-2">
+                                🏠 Home
+                            </Button>
+                        </Link>
+                        <Link href="/profile">
+                            <Button variant="outline" size="sm" className="flex items-center gap-2">
+                                👤 My Profile
+                            </Button>
+                        </Link>
+                    </div>
+
                     <div className="flex items-center gap-4">
                         <NotificationBell notifications={notifications} />
                         <Link href="/electrician">
@@ -276,8 +309,8 @@ export default function CustomerDashboard() {
                 {/* Active Request Card */}
                 {activeRequest && (
                     <Card variant="elevated" padding="md" className="mb-6 border-l-4 border-l-blue-500 bg-blue-50/50">
-                        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-                            <div>
+                        <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                            <div className="flex-1">
                                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                                     <span className="text-2xl">⚡</span>
                                     Current Service
@@ -296,6 +329,29 @@ export default function CustomerDashboard() {
                                         {activeRequest.status === 'SUCCESS' ? 'Service Completed' : activeRequest.status}
                                     </span>
                                 </div>
+
+                                {/* Show Electrician Details when ACCEPTED */}
+                                {activeRequest.status === 'ACCEPTED' && activeRequest.electricianName && (
+                                    <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200">
+                                        <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                                            👨‍🔧 Electrician Assigned
+                                        </h3>
+                                        <div className="space-y-1 text-sm">
+                                            <p className="text-gray-700">
+                                                <span className="font-medium">Name:</span> {activeRequest.electricianName}
+                                            </p>
+                                            <p className="text-gray-700">
+                                                <span className="font-medium">Phone:</span>{' '}
+                                                <a
+                                                    href={`tel:${activeRequest.electricianPhone}`}
+                                                    className="text-blue-600 hover:underline font-medium"
+                                                >
+                                                    {activeRequest.electricianPhone}
+                                                </a>
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {activeRequest.status === 'SUCCESS' && (
@@ -370,9 +426,19 @@ export default function CustomerDashboard() {
                     </div>
 
                     {location && (
-                        <p className="text-sm text-green-600 mt-3">
-                            ✓ Location set: {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-                        </p>
+                        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <p className="text-sm text-green-700 font-medium mb-1">
+                                ✓ Location Detected
+                            </p>
+                            <p className="text-xs text-gray-600">
+                                <strong>Coordinates:</strong> {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                            </p>
+                            {locationAddress && (
+                                <p className="text-xs text-gray-600 mt-1">
+                                    <strong>Address:</strong> {locationAddress}
+                                </p>
+                            )}
+                        </div>
                     )}
 
                     {error && (

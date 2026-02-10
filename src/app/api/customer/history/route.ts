@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getRows, SHEET_TABS } from '@/lib/google-sheets';
 
 export async function GET(request: NextRequest) {
@@ -13,90 +14,167 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // First, find the customer ID by phone
-        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
-        const customerHeaders = customerRows[0] || [];
-        const customerPhoneIndex = customerHeaders.indexOf('Phone');
-        const customerIdIndex = customerHeaders.indexOf('CustomerID');
+        // ===== 1. Find customer in Supabase =====
+        const { data: customer } = await supabaseAdmin
+            .from('customers')
+            .select('customer_id')
+            .eq('phone', phone)
+            .single();
 
-        let customerId = null;
-        for (let i = 1; i < customerRows.length; i++) {
-            if (customerRows[i][customerPhoneIndex] === phone) {
-                customerId = customerRows[i][customerIdIndex];
-                break;
+        let customerId = customer?.customer_id;
+
+        // Fallback: find customer in Google Sheets
+        if (!customerId) {
+            try {
+                const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
+                const custHeaders = customerRows[0] || [];
+                for (let i = 1; i < customerRows.length; i++) {
+                    if (customerRows[i][custHeaders.indexOf('Phone')] === phone) {
+                        customerId = customerRows[i][custHeaders.indexOf('CustomerID')];
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.error('[History] Google Sheets customer lookup error:', e);
             }
         }
 
         if (!customerId) {
-            // No customer record found, return empty history
             return NextResponse.json({
                 success: true,
-                requests: []
+                serviceRequests: [],
+                message: 'No customer profile found'
             });
         }
 
-        // Get service requests for this customer
-        const serviceRows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-        const serviceHeaders = serviceRows[0] || [];
+        // ===== 2. Get service requests from Supabase (last 30 days) =====
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: requests, error: reqError } = await supabaseAdmin
+            .from('service_requests')
+            .select('*')
+            .eq('customer_id', customerId)
+            .gte('created_at', thirtyDaysAgo)
+            .order('created_at', { ascending: false });
 
-        const requests = [];
-        const completedAtIndex = serviceHeaders.indexOf('CompletedAt');
-        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        if (requests && requests.length > 0) {
+            // Get electrician info for matched requests
+            const electricianIds = [...new Set(requests
+                .map(r => r.electrician_id)
+                .filter(id => id && id !== 'BROADCAST'))];
 
-        // Fetch Electricians to map IDs to Names
-        const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
-        const electricianMap = new Map<string, string>();
-        if (electricianRows.length > 1) {
-            const headers = electricianRows[0];
-            const idIndex = headers.indexOf('ElectricianID');
-            const nameIndex = headers.indexOf('Name');
-            if (idIndex !== -1 && nameIndex !== -1) {
-                electricianRows.slice(1).forEach(row => {
-                    if (row[idIndex]) electricianMap.set(row[idIndex], row[nameIndex] || 'Unknown');
-                });
-            }
-        }
+            let electricianMap: Record<string, { name: string; phone: string }> = {};
 
-        for (let i = 1; i < serviceRows.length; i++) {
-            const row = serviceRows[i];
-            if (row[serviceHeaders.indexOf('CustomerID')] === customerId) {
-                // Filter out completed requests older than 1 hour
-                if (row[serviceHeaders.indexOf('Status')] === 'SUCCESS') {
-                    const completedAt = completedAtIndex !== -1 ? row[completedAtIndex] : null;
+            if (electricianIds.length > 0) {
+                const { data: electricians } = await supabaseAdmin
+                    .from('electricians')
+                    .select('electrician_id, name, phone_primary')
+                    .in('electrician_id', electricianIds);
 
-                    if (completedAt) {
-                        const completedTime = new Date(completedAt).getTime();
-                        if (completedTime < oneHourAgo) {
-                            continue; // Skip this request
-                        }
+                if (electricians) {
+                    for (const e of electricians) {
+                        electricianMap[e.electrician_id] = {
+                            name: e.name,
+                            phone: e.phone_primary
+                        };
                     }
                 }
-
-                requests.push({
-                    requestId: row[serviceHeaders.indexOf('RequestID')],
-                    electricianId: row[serviceHeaders.indexOf('ElectricianID')],
-                    electricianName: electricianMap.get(row[serviceHeaders.indexOf('ElectricianID')]) || row[serviceHeaders.indexOf('ElectricianID')],
-                    serviceType: row[serviceHeaders.indexOf('ServiceType')],
-                    status: row[serviceHeaders.indexOf('Status')],
-                    preferredDate: row[serviceHeaders.indexOf('PreferredDate')],
-                    preferredSlot: row[serviceHeaders.indexOf('PreferredSlot')],
-                    timestamp: row[serviceHeaders.indexOf('Timestamp')],
-                    rating: row[serviceHeaders.indexOf('Rating')] || undefined
-                });
             }
+
+            const serviceRequests = requests.map(r => ({
+                requestId: r.request_id,
+                customerId: r.customer_id,
+                electricianId: r.electrician_id,
+                electricianName: electricianMap[r.electrician_id]?.name || 'Searching...',
+                electricianPhone: electricianMap[r.electrician_id]?.phone || '',
+                serviceType: r.service_type,
+                description: r.description || '',
+                preferredDate: r.preferred_date || '',
+                preferredSlot: r.preferred_slot || '',
+                status: r.status,
+                paymentStatus: r.payment_status || '',
+                amount: r.amount || 0,
+                rating: r.rating || 0,
+                review: r.review || '',
+                createdAt: r.created_at,
+                customerName: r.customer_name || '',
+                customerPhone: r.customer_phone || '',
+                customerAddress: r.customer_address || '',
+                customerCity: r.customer_city || ''
+            }));
+
+            return NextResponse.json({
+                success: true,
+                serviceRequests
+            });
         }
 
-        // Sort by timestamp descending (most recent first)
-        requests.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        // ===== 3. Fallback: Read from Google Sheets =====
+        try {
+            const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
+            const headers = rows[0] || [];
 
-        return NextResponse.json({
-            success: true,
-            requests
-        });
+            const serviceRequests = [];
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row[headers.indexOf('CustomerID')] === customerId) {
+                    const electricianId = row[headers.indexOf('ElectricianID')];
+                    let electricianName = 'Searching...';
+                    let electricianPhone = '';
+
+                    // Look up electrician
+                    if (electricianId && electricianId !== 'BROADCAST') {
+                        const { data: elec } = await supabaseAdmin
+                            .from('electricians')
+                            .select('name, phone_primary')
+                            .eq('electrician_id', electricianId)
+                            .single();
+
+                        if (elec) {
+                            electricianName = elec.name;
+                            electricianPhone = elec.phone_primary;
+                        }
+                    }
+
+                    serviceRequests.push({
+                        requestId: row[headers.indexOf('RequestID')],
+                        customerId: customerId,
+                        electricianId: electricianId || '',
+                        electricianName,
+                        electricianPhone,
+                        serviceType: row[headers.indexOf('ServiceType')] || '',
+                        description: row[headers.indexOf('Description')] || row[headers.indexOf('IssueDetail')] || '',
+                        preferredDate: row[headers.indexOf('PreferredDate')] || '',
+                        preferredSlot: row[headers.indexOf('PreferredSlot')] || '',
+                        status: row[headers.indexOf('Status')] || 'NEW',
+                        createdAt: row[headers.indexOf('Timestamp')] || '',
+                        customerName: '',
+                        customerPhone: phone,
+                        customerAddress: '',
+                        customerCity: ''
+                    });
+                }
+            }
+
+            serviceRequests.sort((a, b) =>
+                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+
+            return NextResponse.json({
+                success: true,
+                serviceRequests
+            });
+        } catch (sheetsError) {
+            console.error('[History] Google Sheets fallback error:', sheetsError);
+            return NextResponse.json({
+                success: true,
+                serviceRequests: []
+            });
+        }
+
     } catch (error) {
-        console.error('Get customer history error:', error);
+        console.error('Customer history error:', error);
         return NextResponse.json(
-            { success: false, error: 'Failed to get service history' },
+            { success: false, error: 'Failed to fetch history' },
             { status: 500 }
         );
     }

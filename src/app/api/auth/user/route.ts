@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getRows, updateRow, SHEET_TABS } from '@/lib/google-sheets';
-import { generateId } from '@/lib/utils';
+import { generateId, getTimestamp } from '@/lib/utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
 // Generate a unique username
 function generateUsername(): string {
@@ -25,7 +26,65 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Get existing users
+        // ===== 1. Check Supabase first (fast) =====
+        let supaUser = null;
+
+        if (phone) {
+            const { data } = await supabaseAdmin
+                .from('users')
+                .select('*')
+                .eq('phone', phone)
+                .eq('user_type', userType || 'customer')
+                .single();
+            if (data) supaUser = data;
+        }
+
+        if (!supaUser && email) {
+            const { data } = await supabaseAdmin
+                .from('users')
+                .select('*')
+                .eq('email', email)
+                .eq('user_type', userType || 'customer')
+                .single();
+            if (data) supaUser = data;
+        }
+
+        // ===== 2. If found in Supabase =====
+        if (supaUser) {
+            // Update last_login
+            await supabaseAdmin
+                .from('users')
+                .update({ last_login: new Date().toISOString() })
+                .eq('user_id', supaUser.user_id);
+
+            // Check electrician status
+            let electricianData = null;
+            if (userType === 'electrician') {
+                electricianData = await findElectricianInSupabase(
+                    phone || supaUser.phone,
+                    email || supaUser.email
+                );
+            }
+
+            return NextResponse.json({
+                success: true,
+                isNewUser: false,
+                user: {
+                    id: supaUser.user_id,
+                    phone: supaUser.phone || electricianData?.phone || null,
+                    email: supaUser.email || null,
+                    name: supaUser.name || null,
+                    username: supaUser.username,
+                    userType: supaUser.user_type,
+                    authProvider: authProvider,
+                    isElectrician: !!electricianData,
+                    electricianStatus: electricianData?.status || null,
+                    electricianId: electricianData?.electricianId || null
+                }
+            });
+        }
+
+        // ===== 3. Fallback: Check Google Sheets =====
         const rows = await getRows(SHEET_TABS.USERS);
         const headers = rows[0] || [];
         const phoneIndex = headers.indexOf('Phone');
@@ -34,10 +93,6 @@ export async function POST(request: NextRequest) {
         const usernameIndex = headers.indexOf('Username');
         const userTypeIndex = headers.indexOf('UserType');
 
-        console.log('[Auth API] Headers:', headers);
-        console.log('[Auth API] Indices - Phone:', phoneIndex, 'Email:', emailIndex);
-
-        // Check if user exists by phone or email
         let existingUser = null;
         let existingUserIndex = -1;
 
@@ -45,109 +100,64 @@ export async function POST(request: NextRequest) {
             const row = rows[i];
             const rowUserType = row[userTypeIndex];
 
-            // Prioritize UserType match to distinguish between Customer and Electrician accounts
             if (phone && row[phoneIndex] === phone && rowUserType === userType) {
                 existingUser = row;
                 existingUserIndex = i;
-                console.log('[Auth API] Found existing user by phone + userType');
                 break;
             }
             if (email && row[emailIndex] === email && rowUserType === userType) {
                 existingUser = row;
                 existingUserIndex = i;
-                console.log('[Auth API] Found existing user by email + userType');
                 break;
             }
         }
 
         if (existingUser) {
-            // User exists - check if they're an electrician
             const userId = existingUser[userIdIndex];
             const storedUserType = existingUser[userTypeIndex] || 'customer';
             const username = existingUser[usernameIndex];
-
             let existingPhone = existingUser[phoneIndex];
 
-            // CRITICAL: If we found user by email but they don't have a phone stored, 
-            // and the current request HAS a phone (e.g. from a previous step or merged data), 
-            // we should update the Users sheet!
-            // BUT for social login, 'phone' is usually undefined in the request body.
-            // So this only helps if we somehow pass phone + email.
-
-            // If we have a phone in the request but not in the sheet, update the sheet
+            // Update missing phone
             if (phone && !existingPhone && existingUserIndex !== -1) {
                 try {
-                    const { updateRow } = await import('@/lib/google-sheets');
-                    // Update phone (1-based row index)
                     await updateRow(SHEET_TABS.USERS, existingUserIndex + 1, phoneIndex, phone);
-                    console.log('[Auth API] Updated missing phone for user:', email);
-                    existingPhone = phone; // Use it for lookup below
+                    existingPhone = phone;
                 } catch (e) {
                     console.error('[Auth API] Failed to update user phone:', e);
                 }
             }
 
-            // Check if user is a registered electrician
-            let electricianData: { electricianId: string; status: string; phone: string } | null = null;
+            // Sync to Supabase (backfill from Sheets)
+            try {
+                await supabaseAdmin.from('users').upsert({
+                    user_id: userId,
+                    phone: existingPhone || phone || null,
+                    email: existingUser[emailIndex] || email || null,
+                    name: existingUser[headers.indexOf('Name')] || name || null,
+                    auth_provider: authProvider,
+                    user_type: storedUserType,
+                    username: username,
+                    last_login: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+            } catch (syncErr) {
+                console.error('[Auth API] Supabase sync error:', syncErr);
+            }
 
-            // Only check electrician status if the user is logging in AS an electrician
+            // Check electrician status
+            let electricianData = null;
             if (userType === 'electrician') {
-                const searchPhone = phone || existingPhone; // Use request phone or stored phone
-                const searchEmail = email || existingUser[emailIndex]; // Use request email or stored email
+                electricianData = await findElectricianInSupabase(
+                    phone || existingPhone,
+                    email || existingUser[emailIndex]
+                );
 
-                console.log('[Auth API] Checking electrician status for phone:', searchPhone, 'email:', searchEmail);
-
-                // Get electrician sheet data
-                const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
-                const elecHeaders = electricianRows[0] || [];
-                const elecPhoneIndex = elecHeaders.indexOf('PhonePrimary');
-                const elecIdIndex = elecHeaders.indexOf('ElectricianID');
-                const elecStatusIndex = elecHeaders.indexOf('Status');
-                const elecEmailIndex = elecHeaders.indexOf('Email'); // Try to find Email column if it exists
-
-                if (searchPhone) {
-                    for (let i = 1; i < electricianRows.length; i++) {
-                        if (electricianRows[i][elecPhoneIndex] === searchPhone) {
-                            electricianData = {
-                                electricianId: electricianRows[i][elecIdIndex],
-                                status: electricianRows[i][elecStatusIndex],
-                                phone: electricianRows[i][elecPhoneIndex]
-                            };
-                            console.log('[Auth API] Found electrician profile by phone:', electricianData);
-                            break;
-                        }
-                    }
-                }
-
-                // If not found by phone and we have email, try email lookup
-                if (!electricianData && searchEmail && elecEmailIndex !== -1) {
-                    for (let i = 1; i < electricianRows.length; i++) {
-                        if (electricianRows[i][elecEmailIndex] === searchEmail) {
-                            const elecPhone = electricianRows[i][elecPhoneIndex];
-                            electricianData = {
-                                electricianId: electricianRows[i][elecIdIndex],
-                                status: electricianRows[i][elecStatusIndex],
-                                phone: elecPhone
-                            };
-                            console.log('[Auth API] Found electrician profile by email:', electricianData);
-
-                            // Sync phone back to Users sheet if missing
-                            if (elecPhone && !existingPhone && existingUserIndex !== -1) {
-                                try {
-                                    await updateRow(SHEET_TABS.USERS, existingUserIndex + 1, phoneIndex, elecPhone);
-                                    console.log('[Auth API] Synced phone from Electricians to Users for:', searchEmail);
-                                    existingPhone = elecPhone;
-                                } catch (e) {
-                                    console.error('[Auth API] Failed to sync phone:', e);
-                                }
-                            }
-                            break;
-                        }
-                    }
-                }
-
+                // Fallback to Sheets if not in Supabase
                 if (!electricianData) {
-                    console.log('[Auth API] No electrician profile found by phone or email');
+                    electricianData = await findElectricianInSheets(
+                        phone || existingPhone,
+                        email || existingUser[emailIndex]
+                    );
                 }
             }
 
@@ -156,7 +166,6 @@ export async function POST(request: NextRequest) {
                 isNewUser: false,
                 user: {
                     id: userId,
-                    // Use electrician's phone if we found one and user doesn't have phone stored
                     phone: existingPhone || electricianData?.phone || null,
                     email: existingUser[emailIndex] || null,
                     name: existingUser[headers.indexOf('Name')] || null,
@@ -170,24 +179,39 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        // Create new user
-        const timestamp = new Date().toISOString();
+        // ===== 4. Create new user in both Supabase + Google Sheets =====
+        const timestamp = getTimestamp();
         const userId = generateId('USER');
         const username = generateUsername();
 
-        const newRow = [
-            timestamp,          // Timestamp
-            userId,             // UserID
-            phone || '',        // Phone
-            email || '',        // Email
-            name || '',         // Name
-            authProvider,       // AuthProvider
-            userType || 'customer', // UserType
-            username,           // Username
-            timestamp,          // CreatedAt
-            timestamp           // LastLogin
-        ];
+        // Write to Supabase first (primary)
+        try {
+            await supabaseAdmin.from('users').insert({
+                user_id: userId,
+                phone: phone || null,
+                email: email || null,
+                name: name || null,
+                auth_provider: authProvider,
+                user_type: userType || 'customer',
+                username: username,
+            });
+        } catch (supaErr) {
+            console.error('[Auth API] Supabase insert error:', supaErr);
+        }
 
+        // Write to Google Sheets (secondary)
+        const newRow = [
+            timestamp,
+            userId,
+            phone || '',
+            email || '',
+            name || '',
+            authProvider,
+            userType || 'customer',
+            username,
+            timestamp,
+            timestamp
+        ];
         await appendRow(SHEET_TABS.USERS, newRow);
 
         return NextResponse.json({
@@ -229,6 +253,29 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // Try Supabase first
+        let query = supabaseAdmin.from('users').select('*');
+        if (phone) query = query.eq('phone', phone);
+        else if (email) query = query.eq('email', email);
+
+        const { data: supaUser } = await query.single();
+
+        if (supaUser) {
+            return NextResponse.json({
+                success: true,
+                user: {
+                    id: supaUser.user_id,
+                    phone: supaUser.phone || null,
+                    email: supaUser.email || null,
+                    name: supaUser.name || null,
+                    username: supaUser.username,
+                    userType: supaUser.user_type || 'customer',
+                    authProvider: supaUser.auth_provider
+                }
+            });
+        }
+
+        // Fallback to Google Sheets
         const rows = await getRows(SHEET_TABS.USERS);
         const headers = rows[0] || [];
         const phoneIndex = headers.indexOf('Phone');
@@ -263,4 +310,64 @@ export async function GET(request: NextRequest) {
             { status: 500 }
         );
     }
+}
+
+// Helper: Find electrician in Supabase
+async function findElectricianInSupabase(phone: string | null, email: string | null) {
+    if (phone) {
+        const { data } = await supabaseAdmin
+            .from('electricians')
+            .select('electrician_id, status, phone_primary')
+            .eq('phone_primary', phone)
+            .single();
+        if (data) return { electricianId: data.electrician_id, status: data.status, phone: data.phone_primary };
+    }
+    if (email) {
+        const { data } = await supabaseAdmin
+            .from('electricians')
+            .select('electrician_id, status, phone_primary')
+            .eq('email', email)
+            .single();
+        if (data) return { electricianId: data.electrician_id, status: data.status, phone: data.phone_primary };
+    }
+    return null;
+}
+
+// Helper: Find electrician in Google Sheets
+async function findElectricianInSheets(phone: string | null, email: string | null) {
+    try {
+        const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
+        const elecHeaders = electricianRows[0] || [];
+        const elecPhoneIndex = elecHeaders.indexOf('PhonePrimary');
+        const elecIdIndex = elecHeaders.indexOf('ElectricianID');
+        const elecStatusIndex = elecHeaders.indexOf('Status');
+        const elecEmailIndex = elecHeaders.indexOf('Email');
+
+        if (phone) {
+            for (let i = 1; i < electricianRows.length; i++) {
+                if (electricianRows[i][elecPhoneIndex] === phone) {
+                    return {
+                        electricianId: electricianRows[i][elecIdIndex],
+                        status: electricianRows[i][elecStatusIndex],
+                        phone: electricianRows[i][elecPhoneIndex]
+                    };
+                }
+            }
+        }
+
+        if (email && elecEmailIndex !== -1) {
+            for (let i = 1; i < electricianRows.length; i++) {
+                if (electricianRows[i][elecEmailIndex] === email) {
+                    return {
+                        electricianId: electricianRows[i][elecIdIndex],
+                        status: electricianRows[i][elecStatusIndex],
+                        phone: electricianRows[i][elecPhoneIndex]
+                    };
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Auth API] Sheets electrician lookup error:', e);
+    }
+    return null;
 }

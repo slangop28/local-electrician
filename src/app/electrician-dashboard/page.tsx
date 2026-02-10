@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { Button, Card, useToast, Input } from '@/components/ui';
 import NotificationBell, { Notification } from '@/components/ui/NotificationBell';
 import { cn } from '@/lib/utils';
+import { LiveTrackingMap } from '@/components/LiveTrackingMap';
 
 interface ElectricianData {
     electricianId: string;
@@ -65,12 +66,13 @@ export default function ElectricianDashboard() {
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // activeService derived state
     const activeService = services.find(s => s.status === 'ACCEPTED');
 
     // Derived Notifications
-    const notifications: Notification[] = availableRequests.map(req => ({
+    const notifications: Notification[] = availableRequests.map((req: any) => ({
         id: req.requestId,
         title: 'New Service Request',
         message: `${req.serviceType} needed in ${req.customerCity}`,
@@ -179,7 +181,7 @@ export default function ElectricianDashboard() {
     // Cleanup polling on unmount is handled by the useEffect return
     // Add Polling Effect
     useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: ReturnType<typeof setInterval>;
 
         if (electricianData?.city && activeTab === 'overview' && isOnline) {
             const pollAvailable = async () => {
@@ -194,13 +196,52 @@ export default function ElectricianDashboard() {
                 }
             };
 
-            interval = setInterval(pollAvailable, 10000); // Poll every 10s
+            interval = setInterval(pollAvailable, 3000); // Poll every 3s for real-time updates
         }
 
         return () => {
             if (interval) clearInterval(interval);
         };
     }, [electricianData?.city, activeTab, isOnline]);
+
+    // Live Location Sharing - shares electrician GPS when on service-details tab with active service
+    useEffect(() => {
+        if (activeTab !== 'service-details' || !activeService || !electricianData) return;
+
+        let watchId: number | null = null;
+        let locationInterval: ReturnType<typeof setInterval>;
+
+        const shareLocation = () => {
+            if (!navigator.geolocation) return;
+
+            watchId = navigator.geolocation.watchPosition(
+                async (position) => {
+                    try {
+                        await fetch('/api/location', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                electricianId: electricianData.electricianId,
+                                requestId: activeService.requestId,
+                                latitude: position.coords.latitude,
+                                longitude: position.coords.longitude
+                            })
+                        });
+                    } catch (err) {
+                        console.error('Failed to share location:', err);
+                    }
+                },
+                (err) => console.warn('Geolocation error:', err),
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+            );
+        };
+
+        shareLocation();
+
+        return () => {
+            if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        };
+    }, [activeTab, activeService?.requestId, electricianData?.electricianId]);
 
     if (isLoading || loadingData) {
         return (
@@ -435,6 +476,37 @@ export default function ElectricianDashboard() {
     const handleLogout = async () => {
         await logout();
         router.push('/');
+    };
+
+
+    const handleDeleteAccount = async () => {
+        if (!confirm('Are you sure you want to delete your account? This action cannot be undone.')) return;
+
+        setIsDeleting(true);
+        try {
+            const response = await fetch('/api/auth/delete-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: electricianData?.electricianId,
+                    userType: 'electrician'
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showToast('Account deleted successfully', 'success');
+                await logout();
+                router.push('/');
+            } else {
+                showToast(data.error || 'Failed to delete account', 'error');
+                setIsDeleting(false);
+            }
+        } catch (error) {
+            console.error('Delete account error:', error);
+            showToast('Failed to delete account', 'error');
+            setIsDeleting(false);
+        }
     };
 
     return (
@@ -799,7 +871,7 @@ export default function ElectricianDashboard() {
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {services.filter(s => s.status !== 'CANCELLED' && s.status !== 'DECLINED').map((service) => (
+                                    {services.filter((s: ServiceRequest) => s.status !== 'CANCELLED' && s.status !== 'DECLINED').map((service) => (
                                         <div key={service.requestId} className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-emerald-500/30 transition-all">
                                             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                                                 <div className="flex-1">
@@ -942,11 +1014,21 @@ export default function ElectricianDashboard() {
                                                 rel="noopener noreferrer"
                                                 className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center gap-2"
                                             >
-                                                <span>🗺️</span> Map
+                                                <span>🗺️</span> Navigate
                                             </a>
                                         )}
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Embedded Map */}
+                            <div className="bg-black/20 rounded-2xl p-4 mb-6 border border-white/5">
+                                <h3 className="text-emerald-400 font-bold text-sm tracking-widest uppercase mb-3">📍 Customer Location</h3>
+                                <LiveTrackingMap
+                                    address={`${activeService.customerAddress || ''}, ${activeService.customerCity || ''}`}
+                                    destinationLabel="Customer"
+                                    height="280px"
+                                />
                             </div>
 
                             {/* Service Info */}
@@ -1289,11 +1371,24 @@ export default function ElectricianDashboard() {
                                 fullWidth
                                 variant="outline"
                                 onClick={handleLogout}
-                                className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 py-4 flex items-center justify-center gap-2"
+                                className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 py-4 flex items-center justify-center gap-2 mb-4"
                             >
                                 <span>🚪</span>
                                 Log Out
                             </Button>
+
+                            <div className="pt-4 border-t border-white/10">
+                                <h3 className="text-sm font-bold text-red-400 mb-2">Danger Zone</h3>
+                                <Button
+                                    fullWidth
+                                    variant="outline"
+                                    onClick={handleDeleteAccount}
+                                    disabled={isDeleting}
+                                    className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                                >
+                                    {isDeleting ? 'Deleting...' : '🗑️ Delete Account'}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 )}

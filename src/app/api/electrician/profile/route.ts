@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, SHEET_TABS, ensureSheet } from '@/lib/google-sheets';
+import { supabaseAdmin } from '@/lib/supabase';
 
 interface CustomerMap {
     [key: string]: {
@@ -24,7 +25,123 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get electrician data
+        // ===== 1. Try Supabase first =====
+        try {
+            let supaElectrician = null;
+
+            if (phone) {
+                const { data } = await supabaseAdmin
+                    .from('electricians')
+                    .select('*')
+                    .eq('phone_primary', phone)
+                    .single();
+                supaElectrician = data;
+            }
+            if (!supaElectrician && searchElectricianId) {
+                const { data } = await supabaseAdmin
+                    .from('electricians')
+                    .select('*')
+                    .eq('electrician_id', searchElectricianId)
+                    .single();
+                supaElectrician = data;
+            }
+
+            if (supaElectrician) {
+                const electricianId = supaElectrician.electrician_id;
+
+                // Get service requests
+                const { data: serviceRequests } = await supabaseAdmin
+                    .from('service_requests')
+                    .select('*')
+                    .eq('electrician_id', electricianId)
+                    .order('created_at', { ascending: false });
+
+                let completedCount = 0;
+                let totalRating = 0;
+                let ratingCount = 0;
+                const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+                const services = (serviceRequests || [])
+                    .map((req: any) => {
+                        if (req.status === 'SUCCESS') completedCount++;
+                        if (req.rating && req.rating > 0) {
+                            totalRating += req.rating;
+                            ratingCount++;
+                        }
+                        return req;
+                    })
+                    .filter((req: any) => {
+                        // Filter out completed requests older than 1 hour
+                        if (req.status === 'SUCCESS' && req.completed_at && req.completed_at < oneHourAgo) {
+                            return false;
+                        }
+                        return true;
+                    })
+                    .map((req: any) => ({
+                        requestId: req.request_id,
+                        customerName: req.customer_name || 'Unknown',
+                        customerPhone: req.customer_phone || '',
+                        customerAddress: req.customer_address || '',
+                        customerCity: req.customer_city || '',
+                        serviceType: req.service_type,
+                        status: req.status,
+                        preferredDate: req.preferred_date,
+                        preferredSlot: req.preferred_slot,
+                        timestamp: req.created_at,
+                        description: req.description,
+                        rating: req.rating
+                    }));
+
+                // Get bank details
+                let bankDetails = undefined;
+                const { data: bankData } = await supabaseAdmin
+                    .from('bank_details')
+                    .select('*')
+                    .eq('electrician_id', electricianId)
+                    .single();
+
+                if (bankData) {
+                    bankDetails = {
+                        accountName: bankData.account_holder_name,
+                        accountNumber: bankData.account_number,
+                        ifscCode: bankData.ifsc_code,
+                        status: bankData.status || 'PENDING'
+                    };
+                }
+
+                const averageRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : 'New';
+
+                return NextResponse.json({
+                    success: true,
+                    electrician: {
+                        electricianId,
+                        name: supaElectrician.name,
+                        phonePrimary: supaElectrician.phone_primary,
+                        phoneSecondary: supaElectrician.phone_secondary || '',
+                        city: supaElectrician.city,
+                        area: supaElectrician.area,
+                        state: supaElectrician.state,
+                        pincode: supaElectrician.pincode,
+                        status: supaElectrician.status,
+                        referralCode: supaElectrician.referral_code,
+                        totalReferrals: supaElectrician.total_referrals || 0,
+                        walletBalance: supaElectrician.wallet_balance || 0,
+                        aadhaarFrontURL: supaElectrician.aadhaar_front_url || null,
+                        aadhaarBackURL: supaElectrician.aadhaar_back_url || null,
+                        panFrontURL: supaElectrician.pan_front_url || null,
+                        servicesCompleted: completedCount,
+                        rating: averageRating,
+                        totalReviews: ratingCount,
+                        bankDetails
+                    },
+                    services
+                });
+            }
+        } catch (supaErr) {
+            console.error('[ElectricianProfile] Supabase error, falling back:', supaErr);
+        }
+
+        // ===== 2. Fallback to Google Sheets =====
         const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
         const headers = electricianRows[0] || [];
 
@@ -36,7 +153,6 @@ export async function GET(request: NextRequest) {
             const rowPhone = row[headers.indexOf('PhonePrimary')];
             const rowId = row[headers.indexOf('ElectricianID')];
 
-            // Match by phone OR by electricianId
             if ((phone && rowPhone === phone) || (searchElectricianId && rowId === searchElectricianId)) {
                 electricianId = rowId;
                 electricianData = {
@@ -55,7 +171,7 @@ export async function GET(request: NextRequest) {
                     aadhaarFrontURL: row[headers.indexOf('AadhaarFrontURL')] || null,
                     aadhaarBackURL: row[headers.indexOf('AadhaarBackURL')] || null,
                     panFrontURL: row[headers.indexOf('PanFrontURL')] || null,
-                    servicesCompleted: 0 // Will be calculated below
+                    servicesCompleted: 0
                 };
                 break;
             }
@@ -68,11 +184,9 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Get service requests for this electrician
+        // Get service requests from Sheets
         const serviceRows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
         const serviceHeaders = serviceRows[0] || [];
-
-        // Get customers to map names and addresses
         const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
         const customerHeaders = customerRows[0] || [];
         const customerMap: CustomerMap = {};
@@ -93,12 +207,9 @@ export async function GET(request: NextRequest) {
 
         const services = [];
         let stats = { completed: 0 };
-
-        // Check if Rating column exists
         const ratingIndex = serviceHeaders.indexOf('Rating');
         const completedAtIndex = serviceHeaders.indexOf('CompletedAt');
         const oneHourAgo = Date.now() - (60 * 60 * 1000);
-
         let totalRating = 0;
         let ratingCount = 0;
 
@@ -106,11 +217,8 @@ export async function GET(request: NextRequest) {
             const row = serviceRows[i];
             if (row[serviceHeaders.indexOf('ElectricianID')] === electricianId) {
                 const status = row[serviceHeaders.indexOf('Status')];
-
-                // Calculate stats
                 if (status === 'SUCCESS') stats.completed++;
 
-                // Calculate Rating
                 if (ratingIndex !== -1 && row[ratingIndex]) {
                     const r = parseFloat(row[ratingIndex]);
                     if (!isNaN(r) && r > 0) {
@@ -119,7 +227,6 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Filter out completed requests older than 1 hour for the list
                 let includeInList = true;
                 if (status === 'SUCCESS' && completedAtIndex !== -1 && row[completedAtIndex]) {
                     const completedTime = new Date(row[completedAtIndex]).getTime();
@@ -128,7 +235,6 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Start of service mapping logic (same as before)
                 if (includeInList) {
                     services.push({
                         requestId: row[serviceHeaders.indexOf('RequestID')],
@@ -148,16 +254,9 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        // Sort services by timestamp descending
         services.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-        // Get bank details
         let bankDetails = null;
-
-        // Find bank details for this electrician
-        // Assuming columns: Timestamp, ElectricianID, AccountantName, AccountNumber, IFSCCode, Status
-        // Indices: 0, 1, 2, 3, 4, 5
-        // Ensure sheet exists before reading
         try {
             await ensureSheet(SHEET_TABS.BANK_DETAILS);
         } catch (e) {
@@ -176,7 +275,6 @@ export async function GET(request: NextRequest) {
             };
         }
 
-        // Calculate average rating
         const averageRating = ratingCount > 0 ? (totalRating / ratingCount).toFixed(1) : 'New';
 
         return NextResponse.json({

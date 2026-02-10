@@ -10,3 +10,4 @@ export { default as LoginModal } from './LoginModal';
 export { default as OTPLoginModal } from './OTPLoginModal';
 export { default as Sidebar } from './Sidebar';
 export { default as ProfileDropdown } from './ProfileDropdown';
+export { default as NotificationBell } from './NotificationBell';

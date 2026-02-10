@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendRow, getRows, updateRow, SHEET_TABS } from '@/lib/google-sheets';
 import { generateId, getTimestamp, REQUEST_STATUS } from '@/lib/utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
     try {
@@ -29,71 +30,125 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Check if customer exists or create new
-        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
-        const custHeaders = customerRows[0] || [];
-        let existingCustId = null;
-        let existingRowIndex = -1;
+        // ===== 1. Check/create customer in Supabase =====
+        let customerId = '';
 
-        for (let i = 1; i < customerRows.length; i++) {
-            if (customerRows[i][custHeaders.indexOf('Phone')] === customerPhone) {
-                existingCustId = customerRows[i][custHeaders.indexOf('CustomerID')];
-                existingRowIndex = i + 1;
-                break;
-            }
-        }
+        const { data: existingCust } = await supabaseAdmin
+            .from('customers')
+            .select('customer_id')
+            .eq('phone', customerPhone)
+            .single();
 
-        let customerId = existingCustId || generateId('CUST');
-
-        if (existingRowIndex > 0) {
-            // Update existing customer address if provided
-            if (address) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Address'), address);
-            if (city) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('City'), city);
-            if (pincode) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Pincode'), pincode);
-            await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Name'), customerName);
+        if (existingCust) {
+            customerId = existingCust.customer_id;
+            // Update address
+            await supabaseAdmin
+                .from('customers')
+                .update({
+                    ...(address && { address }),
+                    ...(city && { city }),
+                    ...(pincode && { pincode }),
+                    ...(customerName && { name: customerName }),
+                    ...(lat && { latitude: parseFloat(lat) }),
+                    ...(lng && { longitude: parseFloat(lng) })
+                })
+                .eq('customer_id', customerId);
         } else {
-            // Create New Customer
-            const customerRow = [
-                getTimestamp(),
-                customerId,
-                customerName,
-                customerPhone,
-                '', // Email
-                city || '',
-                pincode || '',
-                address || '',
-            ];
-            await appendRow(SHEET_TABS.CUSTOMERS, customerRow);
+            customerId = generateId('CUST');
+            await supabaseAdmin.from('customers').insert({
+                customer_id: customerId,
+                name: customerName,
+                phone: customerPhone,
+                email: '',
+                city: city || '',
+                pincode: pincode || '',
+                address: address || '',
+                ...(lat && { latitude: parseFloat(lat) }),
+                ...(lng && { longitude: parseFloat(lng) })
+            });
         }
 
-        // Generate Request ID
-        const requestId = generateId('REQ');
+        // ===== 2. Sync customer to Google Sheets =====
+        try {
+            const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
+            const custHeaders = customerRows[0] || [];
+            let existingRowIndex = -1;
 
-        // Headers: Timestamp, RequestID, CustomerID, ElectricianID, ServiceType, Status, PreferredDate, PreferredSlot, Description
-        // Note: We are using a fixed mapping based on the verified sheet headers to avoid dynamic fetch errors.
+            for (let i = 1; i < customerRows.length; i++) {
+                if (customerRows[i][custHeaders.indexOf('Phone')] === customerPhone) {
+                    existingRowIndex = i + 1;
+                    break;
+                }
+            }
+
+            if (existingRowIndex > 0) {
+                if (address) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Address'), address);
+                if (city) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('City'), city);
+                if (pincode) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Pincode'), pincode);
+                await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Name'), customerName);
+            } else {
+                const customerRow = [
+                    getTimestamp(),
+                    customerId,
+                    customerName,
+                    customerPhone,
+                    '',
+                    city || '',
+                    pincode || '',
+                    address || '',
+                ];
+                await appendRow(SHEET_TABS.CUSTOMERS, customerRow);
+            }
+        } catch (sheetsErr) {
+            console.error('[Broadcast] Google Sheets customer sync error:', sheetsErr);
+        }
+
+        // ===== 3. Create broadcast service request in Supabase =====
+        const requestId = generateId('REQ');
 
         let description = issueDetail || '';
         if (urgency) description = `${description} [Urgency: ${urgency}]`;
 
-        const requestRow = [
-            getTimestamp(),   // 0: Timestamp
-            requestId,        // 1: RequestID
-            customerId,       // 2: CustomerID
-            'BROADCAST',      // 3: ElectricianID
-            serviceType,      // 4: ServiceType
-            REQUEST_STATUS.NEW, // 5: Status
-            urgency,          // 6: Urgency
-            preferredDate || '', // 7: PreferredDate
-            preferredSlot || '', // 8: PreferredSlot
-            description,      // 9: Description
-            city || '',       // 10: City
-            pincode || '',    // 11: Pincode
-            address || '',    // 12: Address
-            lat || '',        // 13: Lat
-            lng || '',        // 14: Lng
-        ];
+        await supabaseAdmin.from('service_requests').insert({
+            request_id: requestId,
+            customer_id: customerId,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            customer_address: address || '',
+            customer_city: city || '',
+            ...(lat && { customer_lat: parseFloat(lat) }),
+            ...(lng && { customer_lng: parseFloat(lng) }),
+            electrician_id: 'BROADCAST',
+            service_type: serviceType,
+            description: description,
+            preferred_date: preferredDate || '',
+            preferred_slot: preferredSlot || '',
+            status: REQUEST_STATUS.NEW,
+        });
 
-        await appendRow(SHEET_TABS.SERVICE_REQUESTS, requestRow);
+        // ===== 4. Also write to Google Sheets =====
+        try {
+            const requestRow = [
+                getTimestamp(),
+                requestId,
+                customerId,
+                'BROADCAST',
+                serviceType,
+                REQUEST_STATUS.NEW,
+                urgency,
+                preferredDate || '',
+                preferredSlot || '',
+                description,
+                city || '',
+                pincode || '',
+                address || '',
+                lat || '',
+                lng || '',
+            ];
+            await appendRow(SHEET_TABS.SERVICE_REQUESTS, requestRow);
+        } catch (sheetsErr) {
+            console.error('[Broadcast] Google Sheets request sync error:', sheetsErr);
+        }
 
         return NextResponse.json({
             success: true,

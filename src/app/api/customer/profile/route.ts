@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, updateRow, appendRow, SHEET_TABS } from '@/lib/google-sheets';
 import { getTimestamp, generateId } from '@/lib/utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
     try {
@@ -14,33 +15,51 @@ export async function GET(request: NextRequest) {
             );
         }
 
+        // ===== 1. Try Supabase first =====
+        const { data: supaCustomer } = await supabaseAdmin
+            .from('customers')
+            .select('*')
+            .eq('phone', phone)
+            .single();
+
+        if (supaCustomer) {
+            return NextResponse.json({
+                success: true,
+                customer: {
+                    customerId: supaCustomer.customer_id,
+                    name: supaCustomer.name,
+                    phone: supaCustomer.phone,
+                    email: supaCustomer.email || '',
+                    city: supaCustomer.city || '',
+                    pincode: supaCustomer.pincode || '',
+                    address: supaCustomer.address || '',
+                }
+            });
+        }
+
+        // ===== 2. Fallback to Google Sheets =====
         const rows = await getRows(SHEET_TABS.CUSTOMERS);
         const headers = rows[0] || [];
 
-        // Find customer by phone
-        // Headers: Timestamp, CustomerID, Name, Phone, Email, City, Pincode, Address
-        let customer = null;
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
             if (row[headers.indexOf('Phone')] === phone) {
-                customer = {
-                    customerId: row[headers.indexOf('CustomerID')],
-                    name: row[headers.indexOf('Name')],
-                    phone: row[headers.indexOf('Phone')],
-                    email: row[headers.indexOf('Email')] || '',
-                    city: row[headers.indexOf('City')] || '',
-                    pincode: row[headers.indexOf('Pincode')] || '',
-                    address: row[headers.indexOf('Address')] || '',
-                };
-                break;
+                return NextResponse.json({
+                    success: true,
+                    customer: {
+                        customerId: row[headers.indexOf('CustomerID')],
+                        name: row[headers.indexOf('Name')],
+                        phone: row[headers.indexOf('Phone')],
+                        email: row[headers.indexOf('Email')] || '',
+                        city: row[headers.indexOf('City')] || '',
+                        pincode: row[headers.indexOf('Pincode')] || '',
+                        address: row[headers.indexOf('Address')] || '',
+                    }
+                });
             }
         }
 
-        if (customer) {
-            return NextResponse.json({ success: true, customer });
-        } else {
-            return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
-        }
+        return NextResponse.json({ success: false, error: 'Customer not found' }, { status: 404 });
 
     } catch (error) {
         console.error('Get customer profile error:', error);
@@ -63,55 +82,83 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const rows = await getRows(SHEET_TABS.CUSTOMERS);
-        const headers = rows[0] || [];
-
-        let rowIndex = -1;
         let customerId = '';
 
-        // Find if customer exists
-        for (let i = 1; i < rows.length; i++) {
-            if (rows[i][headers.indexOf('Phone')] === phone) {
-                rowIndex = i + 1; // 1-based index
-                customerId = rows[i][headers.indexOf('CustomerID')];
-                break;
-            }
+        // ===== 1. Supabase upsert (primary) =====
+        const { data: existingCust } = await supabaseAdmin
+            .from('customers')
+            .select('customer_id')
+            .eq('phone', phone)
+            .single();
+
+        if (existingCust) {
+            customerId = existingCust.customer_id;
+            await supabaseAdmin
+                .from('customers')
+                .update({
+                    ...(name !== undefined && { name }),
+                    ...(email !== undefined && { email }),
+                    ...(city !== undefined && { city }),
+                    ...(pincode !== undefined && { pincode }),
+                    ...(address !== undefined && { address }),
+                })
+                .eq('customer_id', customerId);
+        } else {
+            customerId = generateId('CUST');
+            await supabaseAdmin.from('customers').insert({
+                customer_id: customerId,
+                name: name || '',
+                phone: phone,
+                email: email || '',
+                city: city || '',
+                pincode: pincode || '',
+                address: address || ''
+            });
         }
 
-        if (rowIndex > 0) {
-            // Update existing customer
-            // We need to update specific columns
-            // This is inefficient with individual cell updates, but safe
-            // Ideally should update whole row or use batchUpdate
+        // ===== 2. Google Sheets sync (secondary) =====
+        try {
+            const rows = await getRows(SHEET_TABS.CUSTOMERS);
+            const headers = rows[0] || [];
 
-            const updates = [
-                { col: headers.indexOf('Name'), val: name },
-                { col: headers.indexOf('Email'), val: email },
-                { col: headers.indexOf('City'), val: city },
-                { col: headers.indexOf('Pincode'), val: pincode },
-                { col: headers.indexOf('Address'), val: address }
-            ];
+            let rowIndex = -1;
 
-            for (const update of updates) {
-                if (update.col !== -1 && update.val !== undefined) {
-                    await updateRow(SHEET_TABS.CUSTOMERS, rowIndex, update.col, update.val);
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][headers.indexOf('Phone')] === phone) {
+                    rowIndex = i + 1;
+                    break;
                 }
             }
 
-        } else {
-            // Create new customer
-            customerId = generateId('CUST');
-            const newRow = [
-                getTimestamp(),
-                customerId,
-                name || '',
-                phone,
-                email || '',
-                city || '',
-                pincode || '',
-                address || '' // Ensure 'Address' column exists
-            ];
-            await appendRow(SHEET_TABS.CUSTOMERS, newRow);
+            if (rowIndex > 0) {
+                const updates = [
+                    { col: headers.indexOf('Name'), val: name },
+                    { col: headers.indexOf('Email'), val: email },
+                    { col: headers.indexOf('City'), val: city },
+                    { col: headers.indexOf('Pincode'), val: pincode },
+                    { col: headers.indexOf('Address'), val: address }
+                ];
+
+                for (const update of updates) {
+                    if (update.col !== -1 && update.val !== undefined) {
+                        await updateRow(SHEET_TABS.CUSTOMERS, rowIndex, update.col, update.val);
+                    }
+                }
+            } else {
+                const newRow = [
+                    getTimestamp(),
+                    customerId,
+                    name || '',
+                    phone,
+                    email || '',
+                    city || '',
+                    pincode || '',
+                    address || ''
+                ];
+                await appendRow(SHEET_TABS.CUSTOMERS, newRow);
+            }
+        } catch (sheetsErr) {
+            console.error('[Customer Profile] Google Sheets sync error:', sheetsErr);
         }
 
         return NextResponse.json({
