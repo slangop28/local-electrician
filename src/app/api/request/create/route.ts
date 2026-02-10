@@ -118,6 +118,13 @@ export async function POST(request: NextRequest) {
             status: REQUEST_STATUS.NEW,
         });
 
+        // Log the creation event
+        await supabaseAdmin.from('service_request_logs').insert({
+            request_id: requestId,
+            status: REQUEST_STATUS.NEW,
+            description: 'Request created'
+        });
+
         // ===== 4. Also write to Google Sheets =====
         try {
             const requestRow = [

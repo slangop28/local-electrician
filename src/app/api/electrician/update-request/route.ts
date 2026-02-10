@@ -68,6 +68,13 @@ export async function POST(request: NextRequest) {
                         })
                         .eq('request_id', requestId);
 
+                    // Log acceptance
+                    await supabaseAdmin.from('service_request_logs').insert({
+                        request_id: requestId,
+                        status: REQUEST_STATUS.ACCEPTED,
+                        description: `Request accepted by electrician ${electricianId}`
+                    });
+
                 } else {
                     // Case 2: Standard flow
                     if (currentElectricianId !== electricianId) {
@@ -86,6 +93,13 @@ export async function POST(request: NextRequest) {
                         .from('service_requests')
                         .update(updateData)
                         .eq('request_id', requestId);
+
+                    // Log status change
+                    await supabaseAdmin.from('service_request_logs').insert({
+                        request_id: requestId,
+                        status: newStatus,
+                        description: `Status updated to ${newStatus}`
+                    });
                 }
             }
         } catch (supaErr) {

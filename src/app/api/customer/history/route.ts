@@ -47,13 +47,11 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        // ===== 2. Get service requests from Supabase (last 30 days) =====
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        // ===== 2. Get service requests from Supabase (All history) =====
         const { data: requests, error: reqError } = await supabaseAdmin
             .from('service_requests')
             .select('*')
             .eq('customer_id', customerId)
-            .gte('created_at', thirtyDaysAgo)
             .order('created_at', { ascending: false });
 
         if (requests && requests.length > 0) {

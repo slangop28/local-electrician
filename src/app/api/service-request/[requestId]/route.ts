@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows, SHEET_TABS } from '@/lib/google-sheets';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(
     request: NextRequest,
@@ -17,103 +17,73 @@ export async function GET(
 
         console.log(`[Service Request API] Fetching details for: ${requestId}`);
 
-        // Get service requests
-        const requestRows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-        const requestHeaders = requestRows[0] || [];
+        // 1. Fetch Request Details
+        const { data: requestData, error: requestError } = await supabaseAdmin
+            .from('service_requests')
+            .select('*')
+            .eq('request_id', requestId)
+            .single();
 
-        // Find column indices
-        const getIndex = (name: string) => requestHeaders.indexOf(name);
-        const requestIdIndex = getIndex('RequestID');
-        const customerIdIndex = getIndex('CustomerID');
-        const electricianIdIndex = getIndex('ElectricianID');
-        const serviceTypeIndex = getIndex('ServiceType');
-        const statusIndex = getIndex('Status');
-        const preferredDateIndex = getIndex('PreferredDate');
-        const preferredSlotIndex = getIndex('PreferredSlot');
-        const timestampIndex = getIndex('Timestamp');
-        const addressIndex = getIndex('Address');
-        const descriptionIndex = getIndex('Description');
-
-        // Find the request
-        let requestData = null;
-        for (let i = 1; i < requestRows.length; i++) {
-            if (requestRows[i][requestIdIndex] === requestId) {
-                requestData = {
-                    requestId: requestRows[i][requestIdIndex],
-                    customerId: requestRows[i][customerIdIndex],
-                    electricianId: requestRows[i][electricianIdIndex],
-                    serviceType: requestRows[i][serviceTypeIndex],
-                    status: requestRows[i][statusIndex],
-                    preferredDate: requestRows[i][preferredDateIndex],
-                    preferredSlot: requestRows[i][preferredSlotIndex],
-                    timestamp: requestRows[i][timestampIndex],
-                    address: requestRows[i][addressIndex] || '',
-                    description: requestRows[i][descriptionIndex] || ''
-                };
-                break;
-            }
-        }
-
-        if (!requestData) {
+        if (requestError || !requestData) {
+            console.error('[Service Request API] Request not found:', requestError);
             return NextResponse.json(
                 { success: false, error: 'Service request not found' },
                 { status: 404 }
             );
         }
 
-        console.log(`[Service Request API] Found request:`, requestData);
+        // 2. Fetch Logs (Timeline)
+        const { data: logs, error: logsError } = await supabaseAdmin
+            .from('service_request_logs')
+            .select('*')
+            .eq('request_id', requestId)
+            .order('created_at', { ascending: true });
 
-        // Get customer details
-        const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
-        const customerHeaders = customerRows[0] || [];
-        const custIdIndex = customerHeaders.indexOf('CustomerID');
-        const custNameIndex = customerHeaders.indexOf('Name');
-        const custPhoneIndex = customerHeaders.indexOf('Phone');
-        const custAddressIndex = customerHeaders.indexOf('Address');
-        const custCityIndex = customerHeaders.indexOf('City');
+        // 3. Fetch Customer Details
+        const { data: customerData, error: customerError } = await supabaseAdmin
+            .from('customers')
+            .select('name, phone, address, city')
+            .eq('customer_id', requestData.customer_id)
+            .single();
 
-        let customerData = null;
-        for (let i = 1; i < customerRows.length; i++) {
-            if (customerRows[i][custIdIndex] === requestData.customerId) {
-                customerData = {
-                    name: customerRows[i][custNameIndex],
-                    phone: customerRows[i][custPhoneIndex],
-                    address: customerRows[i][custAddressIndex] || '',
-                    city: customerRows[i][custCityIndex] || ''
+        // 4. Fetch Electrician Details (if assigned)
+        let electricianDetails = null;
+        if (requestData.electrician_id && requestData.electrician_id !== 'BROADCAST') {
+            const { data: elec, error: elecError } = await supabaseAdmin
+                .from('electricians')
+                .select('electrician_id, name, phone_primary')
+                .eq('electrician_id', requestData.electrician_id)
+                .single();
+
+            if (elec) {
+                electricianDetails = {
+                    id: elec.electrician_id,
+                    name: elec.name,
+                    phone: elec.phone_primary
                 };
-                break;
             }
         }
 
-        // Get electrician details if assigned
-        let electricianData = null;
-        if (requestData.electricianId && requestData.electricianId !== 'BROADCAST') {
-            const electricianRows = await getRows(SHEET_TABS.ELECTRICIANS);
-            const elecHeaders = electricianRows[0] || [];
-            const elecIdIndex = elecHeaders.indexOf('ElectricianID');
-            const elecNameIndex = elecHeaders.indexOf('NameAsPerAadhaar');
-            const elecPhoneIndex = elecHeaders.indexOf('PhonePrimary');
-
-            for (let i = 1; i < electricianRows.length; i++) {
-                if (electricianRows[i][elecIdIndex] === requestData.electricianId) {
-                    electricianData = {
-                        id: electricianRows[i][elecIdIndex],
-                        name: electricianRows[i][elecNameIndex],
-                        phone: electricianRows[i][elecPhoneIndex]
-                    };
-                    break;
-                }
-            }
-        }
-
-        console.log(`[Service Request API] Customer:`, customerData);
-        console.log(`[Service Request API] Electrician:`, electricianData);
+        // Format Response
+        const formattedRequest = {
+            requestId: requestData.request_id,
+            customerId: requestData.customer_id,
+            electricianId: requestData.electrician_id,
+            serviceType: requestData.service_type,
+            status: requestData.status,
+            preferredDate: requestData.preferred_date,
+            preferredSlot: requestData.preferred_slot,
+            timestamp: requestData.created_at,
+            address: requestData.customer_address,
+            description: requestData.description
+        };
 
         return NextResponse.json({
             success: true,
-            request: requestData,
+            request: formattedRequest,
             customer: customerData,
-            electrician: electricianData
+            electrician: electricianDetails,
+            logs: logs || []
         });
 
     } catch (error) {
