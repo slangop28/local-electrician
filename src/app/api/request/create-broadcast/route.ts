@@ -35,11 +35,42 @@ export async function POST(request: NextRequest) {
         // ===== 1. Check/create customer in Supabase =====
         let customerId = '';
 
-        const { data: existingCust } = await supabaseAdmin
+        let existingCust = null;
+
+        // 1. Try search by phone
+        const { data: matchPhone } = await supabaseAdmin
             .from('customers')
-            .select('customer_id')
+            .select('customer_id, email, phone')
             .eq('phone', customerPhone)
-            .single();
+            .maybeSingle();
+
+        if (matchPhone) {
+            existingCust = matchPhone;
+        } else {
+            // Try alternate phone formats
+            let altPhone = customerPhone;
+            if (customerPhone.startsWith('+91')) altPhone = customerPhone.slice(3);
+            else if (customerPhone.length === 10) altPhone = '+91' + customerPhone;
+
+            if (altPhone !== customerPhone) {
+                const { data: matchAlt } = await supabaseAdmin
+                    .from('customers')
+                    .select('customer_id, email, phone')
+                    .eq('phone', altPhone)
+                    .maybeSingle();
+                if (matchAlt) existingCust = matchAlt;
+            }
+        }
+
+        // 2. Try search by email if phone didn't match
+        if (!existingCust && customerEmail) {
+            const { data: matchEmail } = await supabaseAdmin
+                .from('customers')
+                .select('customer_id, email, phone')
+                .eq('email', customerEmail)
+                .maybeSingle();
+            if (matchEmail) existingCust = matchEmail;
+        }
 
         if (existingCust) {
             customerId = existingCust.customer_id;
@@ -161,10 +192,10 @@ export async function POST(request: NextRequest) {
                 assignedElectrician, // Write specific ID or 'BROADCAST'
                 serviceType,
                 REQUEST_STATUS.NEW,
-                urgency,
+                urgency || 'High',
                 preferredDate || '',
                 preferredSlot || '',
-                description,
+                issueDetail || description || '',
                 city || '',
                 pincode || '',
                 address || '',

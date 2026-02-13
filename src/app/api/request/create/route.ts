@@ -56,21 +56,16 @@ export async function POST(request: NextRequest) {
 
         let existingCust = null;
 
-        const { data: match1 } = await supabaseAdmin
+        // 1. Search by phone (strict and alternate formats)
+        const { data: matchPhone } = await supabaseAdmin
             .from('customers')
-            .select('customer_id, phone')
+            .select('customer_id, phone, email')
             .eq('phone', customerPhone)
             .maybeSingle();
 
-        if (match1) {
-            existingCust = match1;
+        if (matchPhone) {
+            existingCust = matchPhone;
         } else {
-            // Try strict 10 digit search if input was different? 
-            // Or try adding +91? 
-            // Let's try to match by the normalized phone if we can. 
-            // But we can't easily unless we fetch all users (bad).
-            // Temporary fix: check for "+91" prefix variation
-
             let altPhone = customerPhone;
             if (customerPhone.startsWith('+91')) altPhone = customerPhone.slice(3);
             else if (customerPhone.length === 10) altPhone = '+91' + customerPhone;
@@ -78,11 +73,21 @@ export async function POST(request: NextRequest) {
             if (altPhone !== customerPhone) {
                 const { data: match2 } = await supabaseAdmin
                     .from('customers')
-                    .select('customer_id')
+                    .select('customer_id, phone, email')
                     .eq('phone', altPhone)
                     .maybeSingle();
                 if (match2) existingCust = match2;
             }
+        }
+
+        // 2. Search by email if not found by phone
+        if (!existingCust && customerEmail) {
+            const { data: matchEmail } = await supabaseAdmin
+                .from('customers')
+                .select('customer_id, phone, email')
+                .eq('email', customerEmail)
+                .maybeSingle();
+            if (matchEmail) existingCust = matchEmail;
         }
 
         if (existingCust) {
@@ -184,14 +189,18 @@ export async function POST(request: NextRequest) {
                 getTimestamp(),
                 requestId,
                 customerId,
-                electricianId,
+                electricianId || '',
                 serviceType,
-                urgency,
+                REQUEST_STATUS.NEW,
+                urgency || 'High',
                 preferredDate || '',
                 preferredSlot || '',
                 issueDetail || '',
-                '',
-                REQUEST_STATUS.NEW,
+                city || '',
+                pincode || '',
+                address || '',
+                '', // Lat
+                '', // Lng
             ];
             await appendRow(SHEET_TABS.SERVICE_REQUESTS, requestRow);
         } catch (sheetsErr) {

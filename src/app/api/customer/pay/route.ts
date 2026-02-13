@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, SHEET_TABS, updateRow } from '@/lib/google-sheets';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
     try {
@@ -13,27 +14,38 @@ export async function POST(request: NextRequest) {
         }
 
         const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-        const rowIndex = rows.findIndex((row: string[]) => row[1] === requestId); // Assuming RequestID is Col B (index 1)
+        const headers = rows[0] || [];
+        const requestIdIdx = headers.indexOf('RequestID');
+        const statusIdx = headers.indexOf('Status');
+
+        if (requestIdIdx === -1 || statusIdx === -1) {
+            return NextResponse.json({
+                success: false,
+                error: 'Required columns (RequestID or Status) not found in Google Sheets'
+            }, { status: 500 });
+        }
+
+        const rowIndex = rows.findIndex((row: string[]) => row[requestIdIdx] === requestId);
 
         if (rowIndex === -1) {
             return NextResponse.json({
                 success: false,
-                error: 'Request not found'
+                error: 'Request not found in Google Sheets'
             }, { status: 404 });
         }
 
-        // Update Status (Col F = Index 5) to 'PAID'
-        // Let's verify Column Index from create/route.ts or similar.
-        // Step 512 profile route view: 
-        // 69: requestId: row[serviceHeaders.indexOf('RequestID')],
-        // 72: status: row[serviceHeaders.indexOf('Status')],
+        // 1. Update Supabase
+        const { error: supabaseError } = await supabaseAdmin
+            .from('service_requests')
+            .update({ status: 'PAID' })
+            .eq('request_id', requestId);
 
-        // I need to be sure about indices.
-        // Usually: Timestamp, RequestID, CustomerID, ElectricianID, ServiceType, Status
-        // Indices: 0, 1, 2, 3, 4, 5
-        // Let's assume Status is index 5.
+        if (supabaseError) {
+            console.error('[PayAPI] Supabase update error:', supabaseError);
+        }
 
-        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, 'PAID');
+        // 2. Update Google Sheets
+        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, statusIdx, 'PAID');
 
         return NextResponse.json({
             success: true,

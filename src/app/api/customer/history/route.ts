@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
             }, { status: 400 });
         }
 
-        let customerId;
+        let customerId: string | null = null;
 
         if (phone) {
             // 1. Try finding customer by phone
@@ -42,7 +42,9 @@ export async function GET(request: NextRequest) {
                     if (fuzzyMatch) customerId = fuzzyMatch.customer_id;
                 }
             }
-        } else if (email) {
+        }
+
+        if (!customerId && email) {
             // 2. Try finding customer by email
             const { data: emailMatch } = await supabaseAdmin
                 .from('customers')

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { Button, Card, useToast } from '@/components/ui';
+import { PaymentModal } from '@/components/ui/PaymentModal';
 import { supabase } from '@/lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -47,6 +48,28 @@ export default function BookingStatusPage() {
     const [booking, setBooking] = useState<BookingDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+    const handlePaymentSuccess = async () => {
+        if (!booking) return;
+        try {
+            const response = await fetch('/api/customer/pay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requestId: booking.requestId })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Payment successful! Booking closed.', 'success');
+                setBooking(prev => prev ? { ...prev, status: 'PAID' } : null);
+                setShowPaymentModal(false);
+            } else {
+                showToast('Failed to record payment', 'error');
+            }
+        } catch (error) {
+            showToast('Payment processing error', 'error');
+        }
+    };
 
     // Redirect if not authenticated
     useEffect(() => {
@@ -78,9 +101,9 @@ export default function BookingStatusPage() {
         // If not authenticated, the other effect will handle redirect
         if (!isAuthenticated) return;
 
-        if (!activeRequestId && !userProfile?.phone) {
-            console.warn('[BookingStatus] Missing ID and phone');
-            setError('No booking ID or phone number found');
+        if (!activeRequestId && !userProfile?.phone && !userProfile?.email) {
+            console.warn('[BookingStatus] Missing ID and phone/email');
+            setError('No booking ID or contact info found');
             setLoading(false);
             return;
         }
@@ -93,12 +116,12 @@ export default function BookingStatusPage() {
                 let targetRequestId = activeRequestId;
 
                 // If no ID provided, try to fetch active booking for user
-                if (!targetRequestId && userProfile?.phone) {
+                if (!targetRequestId && (userProfile?.phone || userProfile?.email)) {
                     try {
-                        const activeRes = await fetch(`/api/customer/active-request?customerId=${encodeURIComponent(userProfile?.phone)}`);
+                        const activeRes = await fetch(`/api/customer/active-request?phone=${encodeURIComponent(userProfile?.phone || '')}&email=${encodeURIComponent(userProfile?.email || '')}`);
                         const activeData = await activeRes.json();
                         if (activeData.success && activeData.activeRequest) {
-                            targetRequestId = activeData.activeRequest.requestId;
+                            targetRequestId = activeData.activeRequest.requestId || activeData.activeRequest.request_id;
                             setActiveRequestId(targetRequestId); // Update state to trigger subscription
                         } else {
                             setError('No active booking found');
@@ -172,10 +195,30 @@ export default function BookingStatusPage() {
                     filter: `request_id=eq.${activeRequestId}`,
                 },
                 async (payload: any) => {
-                    console.log('Real-time update received:', payload.new.status);
-                    // Re-fetch full details from API which handles both DB and Sheets logic
-                    fetchBooking();
-                    showToast(`Booking status: ${payload.new.status}`, 'info');
+                    const newStatus = payload.new.status;
+                    const oldStatus = payload.old?.status;
+
+                    if (newStatus !== oldStatus) {
+                        console.log('Status changed:', oldStatus, '->', newStatus);
+                        // Re-fetch full details
+                        fetchBooking();
+
+                        // Friendly messages
+                        const statusLabels: Record<string, string> = {
+                            'ACCEPTED': 'Technician is on the way!',
+                            'IN_PROGRESS': 'Work has started',
+                            'SUCCESS': 'Technician marked job as completed',
+                            'CANCELLED': 'Booking was cancelled',
+                            'PAID': 'Payment successful'
+                        };
+
+                        if (newStatus !== 'SUCCESS') {
+                            showToast(statusLabels[newStatus] || `Status updated to ${newStatus}`, 'info');
+                        }
+                    } else {
+                        // Other fields might have updated (e.g. amount, electrician details)
+                        fetchBooking();
+                    }
                 }
             )
             .subscribe();
@@ -184,6 +227,13 @@ export default function BookingStatusPage() {
             supabase.removeChannel(subscription);
         };
     }, [activeRequestId, userProfile, isAuthenticated, isLoading, showToast]);
+
+    // Sync URL requestId to state
+    useEffect(() => {
+        if (requestIdFromUrl && requestIdFromUrl !== activeRequestId) {
+            setActiveRequestId(requestIdFromUrl);
+        }
+    }, [requestIdFromUrl]);
 
 
     const getStatusIndex = (status: string) => {
@@ -332,6 +382,16 @@ export default function BookingStatusPage() {
                                     </div>
                                 </div>
                             )}
+
+                            {booking.status === 'SUCCESS' && (
+                                <div className="mt-8 bg-green-50 rounded-xl p-6 border-2 border-green-200 text-center">
+                                    <div className="text-3xl mb-2">⭐ Job Completed!</div>
+                                    <p className="text-green-900 font-bold">The technician has finished the work.</p>
+                                    <p className="text-sm text-gray-600 mt-2">
+                                        Thank you for using Local Electrician.
+                                    </p>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
@@ -420,6 +480,15 @@ export default function BookingStatusPage() {
                         Need help? Contact support at support@localelectrician.com
                     </p>
                 </div>
+
+                {/* Payment Modal */}
+                <PaymentModal
+                    isOpen={showPaymentModal}
+                    onClose={() => setShowPaymentModal(false)}
+                    onSuccess={handlePaymentSuccess}
+                    amount={250}
+                    serviceType={booking.serviceType}
+                />
             </div>
         </main>
     );

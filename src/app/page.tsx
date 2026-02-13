@@ -32,7 +32,11 @@ export default function Home() {
 
     const fetchService = async () => {
       try {
-        const res = await fetch(`/api/customer/active-request?customerId=${userProfile.phone}`);
+        const queryParams = new URLSearchParams();
+        if (userProfile?.phone) queryParams.set('phone', userProfile.phone);
+        if (userProfile?.email) queryParams.set('email', userProfile.email);
+
+        const res = await fetch(`/api/customer/active-request?${queryParams.toString()}`);
         const data = await res.json();
         if (data.success && data.activeRequest) {
           setActiveService(data.activeRequest);

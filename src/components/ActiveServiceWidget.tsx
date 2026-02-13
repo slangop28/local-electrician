@@ -10,18 +10,33 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        if (activeService && activeService.status !== 'COMPLETED' && activeService.status !== 'CANCELLED') {
+        if (activeService && activeService.status !== 'CANCELLED' && activeService.status !== 'PAID' && activeService.status !== 'COMPLETED') {
+            // Check if user dismissed this specific completed request
+            if (activeService.status === 'SUCCESS') {
+                const dismissed = localStorage.getItem(`dismissed_${activeService.requestId}`);
+                if (dismissed) {
+                    setIsVisible(false);
+                    return;
+                }
+            }
             setIsVisible(true);
         } else {
             setIsVisible(false);
         }
     }, [activeService]);
 
+    const handleDismiss = () => {
+        setIsVisible(false);
+        if (activeService?.status === 'SUCCESS') {
+            localStorage.setItem(`dismissed_${activeService.requestId}`, 'true');
+        }
+    };
+
     if (!isVisible || !activeService) return null;
 
-    const isAccepted = activeService.status === 'ACCEPTED';
+    const isAssigned = ['ACCEPTED', 'SUCCESS', 'IN_PROGRESS'].includes(activeService.status);
     const isSuccess = activeService.status === 'SUCCESS';
-    const bgColor = isSuccess ? 'bg-green-600' : isAccepted ? 'bg-blue-600' : 'bg-cyan-600';
+    const bgColor = isSuccess ? 'bg-green-600' : isAssigned ? 'bg-blue-600' : 'bg-cyan-600';
 
     return (
         <div className={cn(
@@ -33,11 +48,11 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                 <div className="flex items-center gap-2">
                     <span className="animate-pulse w-2 h-2 bg-white rounded-full"></span>
                     <h3 className="font-bold text-sm">
-                        {isSuccess ? 'Service Completed!' : isAccepted ? 'Electrician Assigned!' : 'Finding Electrician...'}
+                        {isSuccess ? 'Job Completed!' : isAssigned ? 'Electrician Assigned!' : 'Finding Electrician...'}
                     </h3>
                 </div>
                 <button
-                    onClick={() => setIsVisible(false)}
+                    onClick={handleDismiss}
                     className="text-white/80 hover:text-white"
                 >
                     ✕
@@ -53,7 +68,7 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                     </div>
                 </div>
 
-                {(isAccepted && (activeService.electricianName || activeService.electrician_name)) ? (
+                {(isAssigned && (activeService.electricianName || activeService.electrician_name)) ? (
                     <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 mb-3">
                         <p className="text-xs text-gray-500 mb-1">Your Electrician</p>
                         <div className="flex items-center gap-3">
@@ -78,7 +93,7 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                     </div>
                 )}
 
-                <Link href={`/service-request/${activeService.requestId}`}>
+                <Link href={`/booking-status?requestId=${activeService.requestId}`}>
                     <button className="w-full py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
                         View Details & Track
                     </button>

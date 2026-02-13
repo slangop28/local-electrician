@@ -96,7 +96,7 @@ export default function CustomerDashboard() {
 
     const fetchActiveRequest = async () => {
         try {
-            const response = await fetch(`/api/customer/active-request?customerId=${userProfile?.id}`);
+            const response = await fetch(`/api/customer/active-request?phone=${userProfile?.phone || ''}&email=${userProfile?.email || ''}`);
             const data = await response.json();
             if (data.success && data.activeRequest) {
                 // Only show if status is relevant (NEW, ACCEPTED, SUCCESS)
@@ -287,13 +287,13 @@ export default function CustomerDashboard() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     customerId: userProfile.id,
+                    customerName: userProfile.name || '',
+                    customerPhone: userProfile.phone || '',
+                    customerEmail: userProfile.email || '',
                     serviceType: 'General Electrical Work',
-                    location: {
-                        lat: location.lat,
-                        lng: location.lng,
-                        address: locationAddress || 'Current Location'
-                    },
-                    specificElectricianId: electricianId,
+                    address: locationAddress || 'Current Location',
+                    city: 'Location Search', // Or derive from geocode
+                    electricianId: electricianId,
                     preferredDate: today,
                     preferredSlot: 'ASAP', // Or `Now (${currentTime})`
                     urgency: 'High'
@@ -344,105 +344,13 @@ export default function CustomerDashboard() {
 
                     <div className="flex items-center gap-4">
                         <NotificationBell notifications={notifications} />
-                        <Link href="/electrician">
-                            <Button variant="outline" size="sm">Join as Electrician</Button>
-                        </Link>
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto px-4 py-6">
 
-                {/* Active Request Card */}
-                {activeRequest && (
-                    <Card variant="elevated" padding="md" className="mb-6 border-l-4 border-l-blue-500 bg-blue-50/50">
-                        <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-                            <div className="flex-1">
-                                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                                    <span className="text-2xl">⚡</span>
-                                    Current Service
-                                </h2>
-                                <p className="text-gray-600 mt-1">
-                                    <strong>ID:</strong> #{activeRequest.request_id || activeRequest.requestId}
-                                </p>
-                                <p className="text-gray-600">
-                                    {activeRequest.serviceType} • {activeRequest.preferredDate || 'Today'} • {activeRequest.preferredSlot || 'ASAP'}
-                                </p>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <span className={cn(
-                                        "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider",
-                                        activeRequest.status === 'NEW' ? "bg-amber-100 text-amber-700" :
-                                            activeRequest.status === 'ACCEPTED' ? "bg-blue-100 text-blue-700" :
-                                                activeRequest.status === 'SUCCESS' ? "bg-green-100 text-green-700" :
-                                                    "bg-gray-100 text-gray-700"
-                                    )}>
-                                        {activeRequest.status === 'SUCCESS' ? 'Service Completed' : activeRequest.status === 'ACCEPTED' ? 'Booking Confirmed' : activeRequest.status}
-                                    </span>
-                                </div>
 
-                                {/* Show Electrician Details when ACCEPTED */}
-                                {activeRequest.status === 'ACCEPTED' && activeRequest.electricianName && (
-                                    <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200">
-                                        <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center gap-2">
-                                            👨‍🔧 Electrician Assigned
-                                        </h3>
-                                        <div className="space-y-1 text-sm">
-                                            <p className="text-gray-700">
-                                                <span className="font-medium">Name:</span> {activeRequest.electricianName}
-                                            </p>
-                                            <p className="text-gray-700">
-                                                <span className="font-medium">Phone:</span>{' '}
-                                                <a
-                                                    href={`tel:${activeRequest.electricianPhone}`}
-                                                    className="text-blue-600 hover:underline font-medium"
-                                                >
-                                                    {activeRequest.electricianPhone}
-                                                </a>
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {activeRequest.status === 'SUCCESS' && (
-                                <div className="w-full md:w-auto">
-                                    <Button
-                                        onClick={() => setShowPaymentModal(true)}
-                                        className="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 animate-pulse"
-                                    >
-                                        Confirm & Pay ₹250
-                                    </Button>
-                                    <p className="text-xs text-center md:text-right text-gray-500 mt-2">
-                                        Please confirm service completion
-                                    </p>
-                                </div>
-                            )}
-
-                            {activeRequest.status === 'ACCEPTED' && (
-                                <div className="flex flex-col gap-2">
-                                    <div className="text-sm text-blue-600 bg-blue-100 px-4 py-2 rounded-lg">
-                                        Electrician is on the way!
-                                    </div>
-                                    <Link href={`/booking-status?requestId=${activeRequest.request_id || activeRequest.requestId}`}>
-                                        <Button size="sm" variant="primary" className="w-full">View Details</Button>
-                                    </Link>
-                                </div>
-                            )}
-
-                            {activeRequest.status === 'NEW' && (
-                                <div className="flex flex-col gap-2">
-                                    <div className="text-sm text-amber-600 bg-amber-100 px-4 py-2 rounded-lg">
-                                        Searching for nearby electricians...
-                                    </div>
-                                    <Link href={`/booking-status?requestId=${activeRequest.request_id || activeRequest.requestId}`}>
-                                        <Button size="sm" variant="outline" className="w-full">Track Status</Button>
-                                    </Link>
-                                </div>
-                            )}
-                        </div>
-                    </Card>
-                )
-                }
 
                 {/* Payment Modal */}
                 <PaymentModal
@@ -529,54 +437,7 @@ export default function CustomerDashboard() {
                     )
                 }
 
-                {/* Active Request Notification */}
-                {
-                    activeRequest && activeRequest.status === 'NEW' && activeRequest.electricianId === 'BROADCAST' && (
-                        <div className="mb-8">
-                            <Card variant="elevated" className="bg-blue-50 border-blue-200 animate-pulse">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                            <span className="text-2xl animate-spin-slow">📡</span>
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-blue-900">Broadcasting Request...</h3>
-                                            <p className="text-blue-700 text-sm">Waiting for a nearby electrician to accept.</p>
-                                        </div>
-                                    </div>
-                                    <Link href="/profile">
-                                        <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100 bg-white">
-                                            View in Profile →
-                                        </Button>
-                                    </Link>
-                                </div>
-                            </Card>
-                        </div>
-                    )
-                }
 
-                {
-                    activeRequest && activeRequest.status === 'ACCEPTED' && (
-                        <div className="mb-8">
-                            <Card variant="elevated" className="bg-green-50 border-green-200">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                                        <span className="text-2xl">✅</span>
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-green-900">Technician Allotted!</h3>
-                                        <p className="text-green-700 text-sm">
-                                            Electrician <strong>{activeRequest.electricianId}</strong> is on the way.
-                                        </p>
-                                    </div>
-                                    <div className="ml-auto">
-                                        <Button size="sm" variant="primary" onClick={() => window.location.reload()}>View Details</Button>
-                                    </div>
-                                </div>
-                            </Card>
-                        </div>
-                    )
-                }
 
                 {
                     location && (
@@ -642,11 +503,7 @@ export default function CustomerDashboard() {
                                     <p className="text-gray-600 mb-4">
                                         We couldn&apos;t find verified electricians in your area yet.
                                     </p>
-                                    <Link href="/electrician">
-                                        <Button variant="outline">
-                                            Know an electrician? Invite them to register
-                                        </Button>
-                                    </Link>
+
                                 </Card>
                             ) : (
                                 electricians.map((electrician) => (

@@ -38,11 +38,11 @@ export default function ProfilePage() {
     }, [isLoading, isAuthenticated, router]);
 
     useEffect(() => {
-        if (activeTab === 'history' && userProfile?.phone) {
+        if (activeTab === 'history' && (userProfile?.phone || userProfile?.email)) {
             const fetchHistory = async () => {
                 setIsLoadingHistory(true);
                 try {
-                    const res = await fetch(`/api/customer/history?phone=${userProfile.phone}`);
+                    const res = await fetch(`/api/customer/history?phone=${userProfile.phone || ''}&email=${userProfile.email || ''}`);
                     const data = await res.json();
                     if (data.success) {
                         setHistory(data.serviceRequests || []);
@@ -68,7 +68,7 @@ export default function ProfilePage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    userId: userProfile?.phone,
+                    userId: userProfile?.id || userProfile?.phone || userProfile?.email,
                     userType: 'customer'
                 })
             });

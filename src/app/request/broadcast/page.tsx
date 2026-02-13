@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
+import { useAuth } from '@/lib/AuthContext';
 import { SERVICE_TYPES, URGENCY_LEVELS, TIME_SLOTS, cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocoding';
 
 export default function BroadcastRequestPage() {
     const router = useRouter();
+    const { userProfile } = useAuth();
     const searchParams = useSearchParams();
     const targetElectricianId = searchParams.get('electricianId');
     const targetElectricianName = searchParams.get('electricianName');
@@ -21,7 +23,17 @@ export default function BroadcastRequestPage() {
             setServiceType('General Electrical'); // Common default
             setUrgency('Emergency'); // Usually if they pick a specific person they want it now
         }
-    }, [targetElectricianId]);
+
+        // Prefill from user profile if available
+        if (userProfile) {
+            setCustomerName(userProfile.name || '');
+            setCustomerPhone(userProfile.phone || '');
+            setCustomerEmail(userProfile.email || '');
+            setAddress(userProfile.address || '');
+            setCity(userProfile.city || '');
+            setPincode(userProfile.pincode || '');
+        }
+    }, [targetElectricianId, userProfile]);
     const [success, setSuccess] = useState(false);
     const [requestId, setRequestId] = useState('');
 
@@ -107,6 +119,10 @@ export default function BroadcastRequestPage() {
             if (data.success) {
                 setRequestId(data.requestId);
                 setSuccess(true);
+                // Wait 1.5s then redirect for better feedback, or redirect immediately
+                setTimeout(() => {
+                    router.push(`/booking-status?requestId=${data.requestId}`);
+                }, 1500);
             } else {
                 alert(data.error || 'Failed to submit request');
             }
@@ -197,9 +213,9 @@ export default function BroadcastRequestPage() {
                             <p className="text-xs text-gray-400 mt-2">Updates sent to {customerEmail}</p>
                         </div>
 
-                        <Link href="/app">
+                        <Link href="/">
                             <Button fullWidth variant="primary">
-                                ← Go to Dashboard
+                                ← Go Home
                             </Button>
                         </Link>
                     </Card>

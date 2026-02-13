@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
                 let altPhone = phone;
                 // removing everything non-digit
                 const digits = phone.replace(/\D/g, '');
-                if (digits.startsWith('91') && digits.length === 12) altPhone = '+' + digits; // e.g., 919876543210 -> +919876543210
-                else if (digits.length === 10) altPhone = '+91' + digits; // e.g., 9876543210 -> +919876543210
+                if (digits.startsWith('91') && digits.length === 12) altPhone = '+' + digits;
+                else if (digits.length === 10) altPhone = '+91' + digits;
 
                 if (altPhone !== phone) {
                     const { data: fuzzyMatch } = await supabaseAdmin
@@ -45,7 +45,9 @@ export async function GET(request: NextRequest) {
                     if (fuzzyMatch) customerId = fuzzyMatch.customer_id;
                 }
             }
-        } else if (email) {
+        }
+
+        if (!customerId && email) {
             // 2. Try finding customer by email
             const { data: emailMatch } = await supabaseAdmin
                 .from('customers')
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
                 .from('service_requests')
                 .select('*')
                 .eq('customer_id', customerId)
-                .in('status', ['NEW', 'ACCEPTED', 'IN_PROGRESS'])
+                .in('status', ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS'])
                 .order('created_at', { ascending: false })
                 .limit(1);
 
@@ -129,7 +131,16 @@ export async function GET(request: NextRequest) {
                 }
 
                 const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-                const customerRequests = rows.slice(1).filter((row: string[]) => row[2] === actualCustomerId);
+                const serviceHeaders = rows[0] || [];
+                const statusIndex = serviceHeaders.indexOf('Status');
+                const requestIdIndex = serviceHeaders.indexOf('RequestID');
+                const serviceCustIdIndex = serviceHeaders.indexOf('CustomerID');
+                const serviceTypeIndex = serviceHeaders.indexOf('ServiceType');
+                const dateIndex = serviceHeaders.indexOf('PreferredDate');
+                const slotIndex = serviceHeaders.indexOf('PreferredSlot');
+                const electricianIdIndex = serviceHeaders.indexOf('ElectricianID');
+
+                const customerRequests = rows.slice(1).filter((row: string[]) => row[serviceCustIdIndex] === actualCustomerId);
 
                 if (customerRequests.length === 0) {
                     return NextResponse.json({ success: true, activeRequest: null });
@@ -140,21 +151,20 @@ export async function GET(request: NextRequest) {
                 });
 
                 const latestRequest = customerRequests[0];
-                const status = latestRequest[5];
-                const activeStatuses = ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS']; // Include SUCCESS just in case? Or just active? 
+                const status = latestRequest[statusIndex] || '';
 
-                if (!['NEW', 'ACCEPTED', 'IN_PROGRESS'].includes(status)) {
+                if (!['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS'].includes(status)) {
                     return NextResponse.json({ success: true, activeRequest: null });
                 }
 
                 const requestData: any = {
-                    requestId: latestRequest[1],
-                    customerId: latestRequest[2],
-                    electricianId: latestRequest[3],
-                    serviceType: latestRequest[4],
-                    status: latestRequest[5],
-                    preferredDate: latestRequest[6] || '',
-                    preferredSlot: latestRequest[7] || '',
+                    requestId: latestRequest[requestIdIndex],
+                    customerId: latestRequest[serviceCustIdIndex],
+                    electricianId: latestRequest[electricianIdIndex],
+                    serviceType: latestRequest[serviceTypeIndex],
+                    status: status,
+                    preferredDate: latestRequest[dateIndex] || '',
+                    preferredSlot: latestRequest[slotIndex] || '',
                     timestamp: latestRequest[0],
                 };
 
