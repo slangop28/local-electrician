@@ -305,8 +305,8 @@ export default function ProfilePage() {
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({
                                                 phone: userProfile.phone,
-                                                name: userProfile.name,
                                                 email: userProfile.email,
+                                                name: userProfile.name,
                                                 city: addressForm.city,
                                                 pincode: addressForm.pincode,
                                                 address: addressForm.address

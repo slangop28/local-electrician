@@ -1,0 +1,23 @@
+
+> local-electrician@0.1.0 build
+> next build
+
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 65s
+  Running TypeScript ...
+Failed to compile.
+
+./src/app/api/debug/migrate-data/route.ts:281:13
+Type error: 'success' is specified more than once, so this usage will be overwritten.
+
+[0m [90m 279 |[39m
+ [90m 280 |[39m         [36mreturn[39m [33mNextResponse[39m[33m.[39mjson({
+[31m[1m>[22m[39m[90m 281 |[39m             success[33m:[39m result[33m.[39merrors[33m.[39mlength [33m===[39m [35m0[39m[33m,[39m
+ [90m     |[39m             [31m[1m^[22m[39m
+ [90m 282 |[39m             message[33m:[39m result[33m.[39merrors[33m.[39mlength [33m===[39m [35m0[39m 
+ [90m 283 |[39m                 [33m?[39m [32m'Data migration completed successfully'[39m 
+ [90m 284 |[39m                 [33m:[39m [32m'Data migration completed with errors'[39m[33m,[39m[0m
+Next.js build worker exited with code: 1 and signal: null
