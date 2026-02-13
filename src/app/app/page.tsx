@@ -238,12 +238,16 @@ export default function CustomerDashboard() {
 
             if (data.success) {
                 setElectricians(data.electricians || []);
+                if (data.electricians?.length === 0) {
+                    setError(data.message || 'No electricians found within 15km of your location.');
+                }
             } else {
+                console.error('Nearby API error:', data.error);
                 setError(data.error || 'Failed to fetch electricians');
             }
         } catch (err) {
             console.error('Fetch error:', err);
-            setError('Failed to load electricians. Please try again.');
+            setError('Network error. Could not connect to server. Please check your connection and try again.');
         } finally {
             setLoading(false);
         }
@@ -306,7 +310,7 @@ export default function CustomerDashboard() {
                         <span className="font-bold text-gray-900 hidden sm:block">Local Electrician</span>
                     </Link>
 
-                    {/* Navigation */}
+                    {/* Navigation & Actions */}
                     <div className="flex items-center gap-2">
                         <Link href="/">
                             <Button variant="ghost" size="sm" className="hidden sm:flex items-center gap-2 text-gray-600">
@@ -318,25 +322,18 @@ export default function CustomerDashboard() {
                                 👤 My Profile
                             </Button>
                         </Link>
-                    </div>
-
-                    <div className="flex items-center gap-4">
                         <NotificationBell notifications={[]} />
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto px-4 py-6">
-
-
-
-
                 {/* Payment Modal */}
                 <PaymentModal
                     isOpen={showPaymentModal}
                     onClose={() => setShowPaymentModal(false)}
                     onSuccess={handlePaymentSuccess}
-                    amount={250} // Hardcoded for now
+                    amount={250}
                     serviceType={activeRequest?.serviceType || 'Service'}
                 />
 
@@ -518,7 +515,6 @@ export default function CustomerDashboard() {
                 {
                     !loading && location && viewMode === 'map' && (
                         <Card variant="bordered" padding="none" className="h-[500px] flex items-center justify-center">
-// ... keeps existing map placeholder ...
                             <div className="text-center">
                                 <div className="text-6xl mb-4">🗺️</div>
                                 <h3 className="text-xl font-bold text-gray-900 mb-2">Map View</h3>

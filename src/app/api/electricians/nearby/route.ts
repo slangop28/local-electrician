@@ -29,6 +29,19 @@ export async function GET(request: NextRequest) {
             }, { status: 400 });
         }
 
+        // Check env vars are present
+        const hasUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const hasAnonKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!hasUrl || (!hasServiceKey && !hasAnonKey)) {
+            console.error('[Nearby] Missing Supabase env vars:', { hasUrl, hasServiceKey, hasAnonKey });
+            return NextResponse.json({
+                success: false,
+                error: 'Server configuration error. Please check environment variables.'
+            }, { status: 500 });
+        }
+
         // Get all VERIFIED electricians from Supabase
         const { data: rows, error } = await supabaseAdmin
             .from('electricians')
@@ -36,14 +49,15 @@ export async function GET(request: NextRequest) {
             .eq('status', 'VERIFIED');
 
         if (error) {
-            console.error('Supabase error:', error);
+            console.error('[Nearby] Supabase query error:', JSON.stringify(error));
             return NextResponse.json({
                 success: false,
-                error: 'Failed to fetch electricians'
+                error: 'Failed to fetch electricians from database'
             }, { status: 500 });
         }
 
         if (!rows || rows.length === 0) {
+            console.log('[Nearby] No verified electricians found in database');
             return NextResponse.json({
                 success: true,
                 electricians: [],
@@ -93,11 +107,11 @@ export async function GET(request: NextRequest) {
             count: electricians.length
         });
 
-    } catch (error) {
-        console.error('Fetch electricians error:', error);
+    } catch (error: any) {
+        console.error('[Nearby] Unexpected error:', error?.message || error);
         return NextResponse.json({
             success: false,
-            error: 'Failed to fetch electricians'
+            error: 'Failed to fetch electricians. Please try again.'
         }, { status: 500 });
     }
 }
