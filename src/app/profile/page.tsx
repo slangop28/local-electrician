@@ -38,11 +38,15 @@ export default function ProfilePage() {
     }, [isLoading, isAuthenticated, router]);
 
     useEffect(() => {
-        if (activeTab === 'history' && userProfile?.phone) {
+        if (activeTab === 'history' && (userProfile?.phone || userProfile?.email)) {
             const fetchHistory = async () => {
                 setIsLoadingHistory(true);
                 try {
-                    const res = await fetch(`/api/customer/history?phone=${userProfile.phone}`);
+                    const params = new URLSearchParams();
+                    if (userProfile?.phone) params.append('phone', userProfile.phone);
+                    if (userProfile?.email) params.append('email', userProfile.email);
+
+                    const res = await fetch(`/api/customer/history?${params.toString()}`);
                     const data = await res.json();
                     if (data.success) {
                         setHistory(data.serviceRequests || []);
