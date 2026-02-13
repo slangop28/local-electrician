@@ -15,11 +15,13 @@ export async function POST(request: NextRequest) {
             issueDetail,
             customerName,
             customerPhone,
+            customerEmail,
             address,
             city,
             pincode,
             lat,
-            lng
+            lng,
+            electricianId // Optional: specific electrician ID for direct booking
         } = body;
 
         // Validate required fields
@@ -49,17 +51,30 @@ export async function POST(request: NextRequest) {
                     ...(city && { city }),
                     ...(pincode && { pincode }),
                     ...(customerName && { name: customerName }),
+                    ...(customerEmail && { email: customerEmail }),
                     ...(lat && { latitude: parseFloat(lat) }),
                     ...(lng && { longitude: parseFloat(lng) })
                 })
                 .eq('customer_id', customerId);
+
+            // Sync to users table if logged in
+            if (customerEmail) {
+                await supabaseAdmin
+                    .from('users')
+                    .update({
+                        phone: customerPhone,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('email', customerEmail)
+                    .is('phone', null); // Only update if phone is currently null
+            }
         } else {
             customerId = generateId('CUST');
             await supabaseAdmin.from('customers').insert({
                 customer_id: customerId,
                 name: customerName,
                 phone: customerPhone,
-                email: '',
+                email: customerEmail || '',
                 city: city || '',
                 pincode: pincode || '',
                 address: address || '',
@@ -86,13 +101,14 @@ export async function POST(request: NextRequest) {
                 if (city) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('City'), city);
                 if (pincode) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Pincode'), pincode);
                 await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Name'), customerName);
+                if (customerEmail) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Email'), customerEmail);
             } else {
                 const customerRow = [
                     getTimestamp(),
                     customerId,
                     customerName,
                     customerPhone,
-                    '',
+                    customerEmail || '',
                     city || '',
                     pincode || '',
                     address || '',
@@ -109,6 +125,9 @@ export async function POST(request: NextRequest) {
         let description = issueDetail || '';
         if (urgency) description = `${description} [Urgency: ${urgency}]`;
 
+        // Determine assigned electrician (specific ID or 'BROADCAST')
+        const assignedElectrician = electricianId || 'BROADCAST';
+
         await supabaseAdmin.from('service_requests').insert({
             request_id: requestId,
             customer_id: customerId,
@@ -118,7 +137,7 @@ export async function POST(request: NextRequest) {
             customer_city: city || '',
             ...(lat && { customer_lat: parseFloat(lat) }),
             ...(lng && { customer_lng: parseFloat(lng) }),
-            electrician_id: 'BROADCAST',
+            electrician_id: assignedElectrician, // Set to specific ID or 'BROADCAST'
             service_type: serviceType,
             description: description,
             preferred_date: preferredDate || '',
@@ -130,7 +149,7 @@ export async function POST(request: NextRequest) {
         await supabaseAdmin.from('service_request_logs').insert({
             request_id: requestId,
             status: REQUEST_STATUS.NEW,
-            description: 'Broadcast request created'
+            description: electricianId ? `Direct request created for ${electricianId}` : 'Broadcast request created'
         });
 
         // ===== 4. Also write to Google Sheets =====
@@ -139,7 +158,7 @@ export async function POST(request: NextRequest) {
                 getTimestamp(),
                 requestId,
                 customerId,
-                'BROADCAST',
+                assignedElectrician, // Write specific ID or 'BROADCAST'
                 serviceType,
                 REQUEST_STATUS.NEW,
                 urgency,
@@ -161,7 +180,7 @@ export async function POST(request: NextRequest) {
             success: true,
             requestId,
             customerId,
-            message: 'Broadcast request created successfully'
+            message: 'Service request created successfully'
         });
 
     } catch (error: any) {

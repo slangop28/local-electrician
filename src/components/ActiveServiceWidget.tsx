@@ -10,7 +10,7 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        if (activeService) {
+        if (activeService && activeService.status !== 'COMPLETED' && activeService.status !== 'CANCELLED') {
             setIsVisible(true);
         } else {
             setIsVisible(false);
@@ -20,7 +20,8 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
     if (!isVisible || !activeService) return null;
 
     const isAccepted = activeService.status === 'ACCEPTED';
-    const bgColor = isAccepted ? 'bg-green-500' : 'bg-blue-600';
+    const isSuccess = activeService.status === 'SUCCESS';
+    const bgColor = isSuccess ? 'bg-green-600' : isAccepted ? 'bg-blue-600' : 'bg-cyan-600';
 
     return (
         <div className={cn(
@@ -32,7 +33,7 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                 <div className="flex items-center gap-2">
                     <span className="animate-pulse w-2 h-2 bg-white rounded-full"></span>
                     <h3 className="font-bold text-sm">
-                        {isAccepted ? 'Electrician Assigned!' : 'Finding Electrician...'}
+                        {isSuccess ? 'Service Completed!' : isAccepted ? 'Electrician Assigned!' : 'Finding Electrician...'}
                     </h3>
                 </div>
                 <button
@@ -50,31 +51,38 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                         <p className="font-bold text-gray-900">{activeService.serviceType}</p>
                         <p className="text-xs text-gray-500">ID: {activeService.requestId}</p>
                     </div>
-                    <Link href="/profile" className="text-xs font-bold text-blue-600 hover:text-blue-700">
-                        View Details →
-                    </Link>
                 </div>
 
-                {isAccepted && activeService.electricianName ? (
-                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                {(isAccepted && (activeService.electricianName || activeService.electrician_name)) ? (
+                    <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 mb-3">
                         <p className="text-xs text-gray-500 mb-1">Your Electrician</p>
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">
-                                {activeService.electricianName[0]}
+                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs uppercase">
+                                {(activeService.electricianName || activeService.electrician_name || 'E')[0]}
                             </div>
                             <div>
-                                <p className="font-bold text-sm text-gray-900">{activeService.electricianName}</p>
-                                <p className="text-xs text-gray-600">{activeService.electricianPhone}</p>
+                                <p className="font-bold text-sm text-gray-900">
+                                    {activeService.electricianName || activeService.electrician_name}
+                                </p>
+                                <p className="text-xs text-gray-600">
+                                    {activeService.electricianPhone || activeService.electrician_phone}
+                                </p>
                             </div>
                         </div>
                     </div>
                 ) : (
-                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 animate-pulse">
+                    <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 animate-pulse mb-3">
                         <p className="text-xs text-blue-800 font-medium text-center">
                             Broadcasting to nearby electricians...
                         </p>
                     </div>
                 )}
+
+                <Link href={`/service-request/${activeService.requestId}`}>
+                    <button className="w-full py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
+                        View Details & Track
+                    </button>
+                </Link>
             </div>
         </div>
     );

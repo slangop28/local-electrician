@@ -3,21 +3,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { onAuthChange, logOut, User } from '@/lib/firebase';
 
-export interface UserProfile {
-    id: string;
-    phone: string | null;
-    email: string | null;
-    name: string | null;
-    username: string;
-    userType: 'customer' | 'electrician';
-    authProvider: 'phone' | 'google' | 'facebook';
-    isElectrician: boolean;
-    electricianStatus?: 'PENDING' | 'VERIFIED' | 'REJECTED';
-    electricianId?: string;
-    address?: string;
-    city?: string;
-    pincode?: string;
-}
+import { UserProfile } from '@/types';
+export type { UserProfile };
 
 interface AuthContextType {
     user: User | null;
@@ -47,8 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Validate session in background (non-blocking)
                 const lastValidated = localStorage.getItem('lastSessionValidation');
                 const oneHour = 60 * 60 * 1000;
-                const shouldValidate = !lastValidated ||
-                    (Date.now() - parseInt(lastValidated)) > oneHour;
+                const isStale = !lastValidated || (Date.now() - parseInt(lastValidated)) > oneHour;
+
+                // Force validation if phone is missing, regardless of staleness
+                const shouldValidate = isStale || !parsed.phone;
 
                 if (shouldValidate && parsed.id) {
                     fetch('/api/auth/validate-session', {
@@ -70,16 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                                 localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
                                 localStorage.setItem('lastSessionValidation', Date.now().toString());
                             } else if (data.success && !data.valid) {
-                                // User no longer exists in DB - force logout
-                                console.log('[Auth] Session invalid - user not found in DB');
+                                // Only logout if server explicitly says user is invalid/deleted
+                                console.warn('[Auth] Session invalid - user not found in DB');
                                 setUserProfile(null);
                                 localStorage.removeItem('userProfile');
                                 localStorage.removeItem('lastSessionValidation');
                             }
                         })
                         .catch(err => {
-                            console.error('[Auth] Session validation failed:', err);
-                            // Keep the stored profile on network error (offline support)
+                            console.error('[Auth] Session validation failed (network error):', err);
+                            // CRITICAL FIX: Do NOT logout on network/server errors.
+                            // Assume session is valid if we can't reach the server.
                         });
                 }
             } catch (e) {

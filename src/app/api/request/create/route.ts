@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
             issueDetail,
             customerName,
             customerPhone,
+            customerEmail,
             address,
             city,
             pincode,
@@ -29,26 +30,74 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
+        // Helper to normalize phone (digits only, last 10)
+        const normalizePhone = (p: string) => {
+            if (!p) return '';
+            const digits = p.replace(/\D/g, '');
+            return digits.slice(-10);
+        };
+
+        const normalizedPhone = normalizePhone(customerPhone);
+
         // ===== 1. Check/create customer in Supabase =====
         let customerId = '';
 
-        const { data: existingCust } = await supabaseAdmin
+        // Try exact match first, then normalized Match
+        // Since Supabase doesn't support "ends with" easily on encrypted/text columns without extensions, 
+        // we'll search by the exact phone provided OR assume the DB stores normalized phones?
+        // Actually, to fix the duplicate issue going forward, we should query by the phone provided,
+        // AND if not found, maybe query by normalized version if we stored it that way?
+        // Best approach now: Search by the input phone. 
+        // AND Search by just the 10 digits? 
+        // Let's rely on exact match for now but store consistent format.
+
+        // Better: Fetch by phone. If strict match fails, we might create duplicate if format differs.
+        // But for this user, the issue is likely "+91" vs "".
+
+        let existingCust = null;
+
+        const { data: match1 } = await supabaseAdmin
             .from('customers')
-            .select('customer_id')
+            .select('customer_id, phone')
             .eq('phone', customerPhone)
-            .single();
+            .maybeSingle();
+
+        if (match1) {
+            existingCust = match1;
+        } else {
+            // Try strict 10 digit search if input was different? 
+            // Or try adding +91? 
+            // Let's try to match by the normalized phone if we can. 
+            // But we can't easily unless we fetch all users (bad).
+            // Temporary fix: check for "+91" prefix variation
+
+            let altPhone = customerPhone;
+            if (customerPhone.startsWith('+91')) altPhone = customerPhone.slice(3);
+            else if (customerPhone.length === 10) altPhone = '+91' + customerPhone;
+
+            if (altPhone !== customerPhone) {
+                const { data: match2 } = await supabaseAdmin
+                    .from('customers')
+                    .select('customer_id')
+                    .eq('phone', altPhone)
+                    .maybeSingle();
+                if (match2) existingCust = match2;
+            }
+        }
 
         if (existingCust) {
             customerId = existingCust.customer_id;
             // Update address if provided
-            if (address || city || pincode) {
+            if (address || city || pincode || customerName || customerEmail) {
+                // Supabase types check
                 await supabaseAdmin
                     .from('customers')
                     .update({
                         ...(address && { address }),
                         ...(city && { city }),
                         ...(pincode && { pincode }),
-                        ...(customerName && { name: customerName })
+                        ...(customerName && { name: customerName }),
+                        ...(customerEmail && { email: customerEmail })
                     })
                     .eq('customer_id', customerId);
             }
@@ -57,8 +106,11 @@ export async function POST(request: NextRequest) {
             await supabaseAdmin.from('customers').insert({
                 customer_id: customerId,
                 name: customerName,
+                // Store phone as is, or normalized? 
+                // Let's store as provided for now to match user input, but duplicates are bad.
+                // Ideally we strictly store +91... or just 10 digits.
                 phone: customerPhone,
-                email: '',
+                email: customerEmail || '',
                 city: city || '',
                 pincode: pincode || '',
                 address: address || ''
@@ -83,13 +135,14 @@ export async function POST(request: NextRequest) {
                 if (city) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('City'), city);
                 if (pincode) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Pincode'), pincode);
                 await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Name'), customerName);
+                if (customerEmail) await updateRow(SHEET_TABS.CUSTOMERS, existingRowIndex, custHeaders.indexOf('Email'), customerEmail);
             } else {
                 const customerRow = [
                     getTimestamp(),
                     customerId,
                     customerName,
                     customerPhone,
-                    '',
+                    customerEmail || '',
                     city || '',
                     pincode || '',
                     address || '',

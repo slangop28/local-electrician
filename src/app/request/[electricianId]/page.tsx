@@ -118,8 +118,8 @@ export default function ServiceRequestPage({
             const data = await response.json();
 
             if (data.success) {
-                // Redirect to landing page — widget will show status
-                router.push('/');
+                setRequestId(data.requestId);
+                setSuccess(true);
             } else {
                 alert(data.error || 'Failed to submit request');
             }
@@ -187,7 +187,7 @@ export default function ServiceRequestPage({
                             </svg>
                         </div>
 
-                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Request Submitted!</h1>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Thank you using Local Electrician!</h1>
                         <p className="text-gray-600 mb-6">
                             Your service request has been sent. The electrician will contact you soon.
                         </p>

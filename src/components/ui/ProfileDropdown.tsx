@@ -96,17 +96,19 @@ export default function ProfileDropdown() {
                         </Link>
 
                         {userProfile.userType === 'customer' && (
-                            <Link
-                                href="/profile?tab=history"
-                                onClick={() => setIsOpen(false)}
-                                className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 transition-colors"
-                            >
-                                <span className="text-lg">📋</span>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-900">Service History</p>
-                                    <p className="text-xs text-gray-500">View past bookings</p>
-                                </div>
-                            </Link>
+                            <>
+                                <Link
+                                    href="/booking-status"
+                                    onClick={() => setIsOpen(false)}
+                                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                    <span className="text-lg">📍</span>
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-900">Booking Status</p>
+                                        <p className="text-xs text-gray-500">Track your bookings</p>
+                                    </div>
+                                </Link>
+                            </>
                         )}
 
                         {userProfile.userType === 'electrician' && userProfile.electricianStatus === 'VERIFIED' && (

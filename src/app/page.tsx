@@ -146,6 +146,7 @@ export default function Home() {
                 <span className="text-sm font-medium text-blue-700">Trusted by 10,000+ customers</span>
               </div>
 
+
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
                 <span className="text-glow">Electrician near you,</span>{' '}
                 <span className="text-glow">in minutes</span>

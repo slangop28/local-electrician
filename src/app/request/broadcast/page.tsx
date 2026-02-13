@@ -2,15 +2,26 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { SERVICE_TYPES, URGENCY_LEVELS, TIME_SLOTS, cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocoding';
 
 export default function BroadcastRequestPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const targetElectricianId = searchParams.get('electricianId');
+    const targetElectricianName = searchParams.get('electricianName');
 
     const [submitting, setSubmitting] = useState(false);
+
+    // Set default values if booking a specific electrician
+    useEffect(() => {
+        if (targetElectricianId) {
+            setServiceType('General Electrical'); // Common default
+            setUrgency('Emergency'); // Usually if they pick a specific person they want it now
+        }
+    }, [targetElectricianId]);
     const [success, setSuccess] = useState(false);
     const [requestId, setRequestId] = useState('');
 
@@ -22,6 +33,7 @@ export default function BroadcastRequestPage() {
     const [issueDetail, setIssueDetail] = useState('');
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
+    const [customerEmail, setCustomerEmail] = useState('');
     const [address, setAddress] = useState('');
     const [city, setCity] = useState('');
     const [pincode, setPincode] = useState('');
@@ -48,6 +60,12 @@ export default function BroadcastRequestPage() {
         if (!customerPhone || customerPhone.length !== 10) {
             newErrors.customerPhone = 'Enter valid 10-digit phone';
         }
+        if (!customerEmail.trim()) {
+            newErrors.customerEmail = 'Email is required for updates';
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+            newErrors.customerEmail = 'Enter a valid email address';
+        }
+
         if (!address.trim()) newErrors.address = 'Address is required';
         if (!city.trim()) newErrors.city = 'City is required';
         if (!pincode.trim()) newErrors.pincode = 'Pincode is required';
@@ -74,19 +92,21 @@ export default function BroadcastRequestPage() {
                     issueDetail,
                     customerName,
                     customerPhone,
+                    customerEmail,
                     address,
                     city,
                     pincode,
                     lat: location?.lat || 0,
-                    lng: location?.lng || 0
+                    lng: location?.lng || 0,
+                    electricianId: targetElectricianId // Pass specific ID if exists
                 }),
             });
 
             const data = await response.json();
 
             if (data.success) {
-                // Redirect to landing page — widget will show status
-                router.push('/');
+                setRequestId(data.requestId);
+                setSuccess(true);
             } else {
                 alert(data.error || 'Failed to submit request');
             }
@@ -147,24 +167,34 @@ export default function BroadcastRequestPage() {
                 <div className="max-w-md mx-auto">
                     <Card variant="elevated" padding="lg" className="text-center">
                         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <span className="text-4xl">📡</span>
+                            <span className="text-4xl">✅</span>
                         </div>
 
-                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Broadcasting Request!</h1>
-                        <p className="text-gray-600 mb-6">
-                            We have sent your request to all nearby electricians. The first one to accept will contact you.
-                        </p>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Request Sent Successfully!</h1>
 
-                        <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left animate-pulse">
-                            <p className="text-sm font-medium text-blue-800 mb-2">Searching nearby...</p>
-                            <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
-                                <div className="h-full bg-blue-500 w-1/2 animate-[shimmer_2s_infinite]"></div>
+                        {targetElectricianName ? (
+                            <p className="text-gray-600 mb-6">
+                                We have sent your request to <strong>{targetElectricianName}</strong>. They will contact you shortly.
+                            </p>
+                        ) : (
+                            <p className="text-gray-600 mb-6">
+                                We have sent your request to all nearby electricians. The first one to accept will contact you.
+                            </p>
+                        )}
+
+                        {!targetElectricianName && (
+                            <div className="bg-blue-50 rounded-xl p-4 mb-6 text-left animate-pulse">
+                                <p className="text-sm font-medium text-blue-800 mb-2">Searching nearby...</p>
+                                <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500 w-1/2 animate-[shimmer_2s_infinite]"></div>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className="bg-gray-50 rounded-xl p-4 mb-6">
                             <p className="text-sm text-gray-500 mb-1">Request ID</p>
                             <p className="font-mono font-bold text-lg text-gray-900">{requestId}</p>
+                            <p className="text-xs text-gray-400 mt-2">Updates sent to {customerEmail}</p>
                         </div>
 
                         <Link href="/app">
@@ -189,16 +219,37 @@ export default function BroadcastRequestPage() {
                         </svg>
                         Back
                     </Link>
-                    <span className="text-sm text-gray-500">Book Any Electrician</span>
+                    <span className="text-sm text-gray-500">
+                        {targetElectricianName ? `Book ${targetElectricianName}` : 'Book Any Electrician'}
+                    </span>
                 </div>
             </header>
 
             <div className="max-w-2xl mx-auto px-4 py-8">
 
                 <div className="mb-6 text-center">
-                    <h1 className="text-2xl font-bold text-gray-900">Book Any Electrician</h1>
-                    <p className="text-gray-600">We&apos;ll find the best available electrician for you instantly.</p>
+                    <h1 className="text-2xl font-bold text-gray-900">
+                        {targetElectricianName ? `Book ${targetElectricianName}` : 'Book Any Electrician'}
+                    </h1>
+                    <p className="text-gray-600">
+                        {targetElectricianName
+                            ? `Send a direct service request to ${targetElectricianName}.`
+                            : "We'll find the best available electrician for you instantly."}
+                    </p>
                 </div>
+
+                {/* Targeted Booking Banner */}
+                {targetElectricianName && (
+                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-4">
+                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl">
+                            👷
+                        </div>
+                        <div>
+                            <p className="text-blue-900 font-medium">You are booking <strong>{targetElectricianName}</strong></p>
+                            <p className="text-blue-700 text-sm">Please provide details so they can accept your request.</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Booking Form */}
                 <Card variant="elevated" padding="lg">
@@ -368,14 +419,24 @@ export default function BroadcastRequestPage() {
                                 error={errors.customerName}
                             />
 
-                            <Input
-                                label="Phone Number"
-                                type="tel"
-                                value={customerPhone}
-                                onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                                error={errors.customerPhone}
-                                helpText="Electricians will call on this number"
-                            />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <Input
+                                    label="Phone Number"
+                                    type="tel"
+                                    value={customerPhone}
+                                    onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                                    error={errors.customerPhone}
+                                    helpText="Electricians will call on this number"
+                                />
+                                <Input
+                                    label="Email Address"
+                                    type="email"
+                                    value={customerEmail}
+                                    onChange={(e) => setCustomerEmail(e.target.value)}
+                                    error={errors.customerEmail}
+                                    helpText="For service updates & tracking"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -387,7 +448,9 @@ export default function BroadcastRequestPage() {
                         loading={submitting}
                         className="mt-8 bg-black text-white hover:bg-gray-800"
                     >
-                        Broadcast Request 📡
+                        {targetElectricianName
+                            ? `Send Request to ${targetElectricianName} 📤`
+                            : 'Broadcast Request 📡'}
                     </Button>
                 </Card>
             </div>

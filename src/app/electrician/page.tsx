@@ -43,11 +43,28 @@ const INDIAN_STATES = [
 
 export default function ElectricianRegistrationPage() {
     const router = useRouter();
+    const { userProfile, isLoading } = useAuth();
     const [currentStep, setCurrentStep] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
     const [generatedId, setGeneratedId] = useState('');
     const [generatedReferralCode, setGeneratedReferralCode] = useState('');
+
+    // Redirect if electrician is already registered
+    useEffect(() => {
+        if (!isLoading && userProfile) {
+            if (userProfile.isElectrician && userProfile.electricianStatus === 'VERIFIED') {
+                // User is a verified electrician - redirect to dashboard
+                router.push('/electrician-dashboard');
+            } else if (userProfile.userType === 'electrician' && userProfile.electricianId) {
+                // User is an electrician (registered but maybe pending verification)
+                router.push('/electrician-dashboard');
+            } else if (!userProfile.isElectrician && userProfile.userType === 'customer') {
+                // User is logged in as customer - redirect to customer dashboard
+                router.push('/app');
+            }
+        }
+    }, [userProfile, isLoading, router]);
 
     const [formData, setFormData] = useState<StepData>({
         name: '',
@@ -256,8 +273,6 @@ export default function ElectricianRegistrationPage() {
             setLocationError('Geolocation is not supported by your browser.');
         }
     };
-
-    const { userProfile } = useAuth(); // Get user profile
 
     // Auto-fill email and phone if available
     useEffect(() => {

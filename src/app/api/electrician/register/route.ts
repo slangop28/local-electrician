@@ -36,6 +36,20 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
         }
 
+        // Check for existing electrician (Supabase)
+        const { data: existingElec } = await supabaseAdmin
+            .from('electricians')
+            .select('electrician_id')
+            .or(`email.eq.${email},phone_primary.eq.${phonePrimary}`)
+            .single();
+
+        if (existingElec) {
+            return NextResponse.json({
+                success: false,
+                error: 'An electrician account with this email/phone already exists.'
+            }, { status: 409 });
+        }
+
         // If no coordinates, geocode the address
         if (!lat || !lng) {
             const fullAddress = `${houseNo}, ${area}, ${city}, ${state}, ${pincode}, India`;
@@ -156,6 +170,7 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Also update in Supabase users table
+                // Supabase types check
                 await supabaseAdmin
                     .from('users')
                     .update({ phone: phonePrimary })

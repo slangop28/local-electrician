@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
 
         if (existingCust) {
             customerId = existingCust.customer_id;
+            // Supabase types check
             await supabaseAdmin
                 .from('customers')
                 .update({

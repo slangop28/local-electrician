@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Button } from './Button';
+import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import {
   signInWithGoogle,
   signInWithFacebook,
-  ConfirmationResult
 } from '@/lib/firebase';
 
 interface OTPLoginModalProps {
@@ -21,139 +19,17 @@ export default function OTPLoginModal({
   onLoginSuccess
 }: OTPLoginModalProps) {
   const { login } = useAuth();
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState('');
   const [userType, setUserType] = useState<'customer' | 'electrician'>('customer');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [timer, setTimer] = useState(0);
 
-  const [verificationHash, setVerificationHash] = useState<string>('');
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Clear timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
-
-  const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const resetForm = () => {
     setError('');
-
-    if (phoneNumber.length !== 10) {
-      setError('Please enter a valid 10-digit phone number');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // Send OTP via API
-      const response = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phoneNumber })
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to send OTP');
-      }
-
-      setVerificationHash(data.hash);
-      setStep('otp');
-      setTimer(60); // 5 minutes expiry on server, but 1 min resend timer on UI
-      setIsLoading(false);
-
-      // Start countdown
-      timerRef.current = setInterval(() => {
-        setTimer(prev => {
-          if (prev <= 1) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err: any) {
-      console.error('Send OTP error:', err);
-      setError(err.message || 'Failed to send OTP. Please try again.');
-      setIsLoading(false);
-    }
   };
 
-  const handleOTPSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (otp.length !== 6) {
-      setError('Please enter a valid 6-digit OTP');
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // 1. Verify OTP with our API
-      const verifyResponse = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: phoneNumber,
-          otp,
-          hash: verificationHash
-        })
-      });
-
-      const verifyData = await verifyResponse.json();
-
-      if (!verifyData.success) {
-        throw new Error(verifyData.error || 'Invalid OTP');
-      }
-
-      // 2. Save/Get user from Google Sheets
-      const response = await fetch('/api/auth/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: phoneNumber,
-          authProvider: 'phone',
-          userType: userType
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        login(data.user);
-        resetForm();
-        onClose();
-
-        // Check if user is a registered electrician (regardless of selected userType)
-        if (data.user.isElectrician) {
-          // Redirect BOTH Verified and Pending users to the dashboard
-          // The dashboard itself will handle the limited view for pending users
-          window.location.href = '/electrician-dashboard';
-        } else if (userType === 'electrician' && !data.user.isElectrician) {
-          window.location.href = '/electrician';
-        } else {
-          onLoginSuccess?.();
-        }
-      } else {
-        setError('Failed to save user data. Please try again.');
-      }
-    } catch (err: any) {
-      console.error('Verify OTP error:', err);
-      setError(err.message || 'Invalid OTP. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+  const handleClose = () => {
+    resetForm();
+    onClose();
   };
 
   const handleGoogleSignIn = async () => {
@@ -163,7 +39,6 @@ export default function OTPLoginModal({
     try {
       const firebaseUser = await signInWithGoogle();
 
-      // Save user to Google Sheets
       const response = await fetch('/api/auth/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -182,12 +57,9 @@ export default function OTPLoginModal({
         resetForm();
         onClose();
 
-        // Check if user is a registered electrician (regardless of selected userType)
-        // This ensures returning technicians are always redirected to their dashboard
         if (data.user.isElectrician) {
           window.location.href = '/electrician-dashboard';
         } else if (userType === 'electrician' && !data.user.isElectrician) {
-          // New electrician who hasn't registered yet
           window.location.href = '/electrician';
         } else {
           onLoginSuccess?.();
@@ -195,9 +67,13 @@ export default function OTPLoginModal({
       } else {
         setError('Failed to save user data. Please try again.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Google sign in error:', err);
-      setError('Google sign in failed. Please try again.');
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in cancelled');
+      } else {
+        setError('Google sign in failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -210,7 +86,6 @@ export default function OTPLoginModal({
     try {
       const firebaseUser = await signInWithFacebook();
 
-      // Save user to Google Sheets
       const response = await fetch('/api/auth/user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,7 +117,7 @@ export default function OTPLoginModal({
     } catch (err: any) {
       console.error('Facebook sign in error:', err);
       if (err.code === 'auth/account-exists-with-different-credential') {
-        setError('An account already exists with the same email address but different sign-in credentials. Sign in using a provider associated with this email address.');
+        setError('An account already exists with this email. Use the same login method.');
       } else {
         setError('Facebook sign in failed. Please try again.');
       }
@@ -251,40 +126,20 @@ export default function OTPLoginModal({
     }
   };
 
-  const resetForm = () => {
-    setStep('phone');
-    setPhoneNumber('');
-    setOtp('');
-    setError('');
-    setTimer(0);
-    setVerificationHash('');
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
-
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
-
   if (!isOpen) return null;
 
   return (
     <>
-      {/* Premium Overlay */}
       <div
         className="fixed inset-0 bg-gradient-to-br from-black/60 via-black/40 to-black/60 z-40 transition-opacity duration-300 backdrop-blur-xl"
         onClick={handleClose}
       />
 
-      {/* Premium Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-black rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto border border-cyan-500/30 glow-blue relative">
-          {/* Animated Background Gradient */}
+          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-pink-500/5 pointer-events-none" />
           <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-pink-500/5 pointer-events-none" />
 
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-pink-500/5 pointer-events-none" />
-
-          {/* Close Button */}
           <button
             onClick={handleClose}
             className="absolute top-6 right-6 p-2 hover:bg-cyan-500/20 rounded-lg transition-all duration-300 glow-blue hover:animate-pulse-glow z-10"
@@ -304,7 +159,6 @@ export default function OTPLoginModal({
             </svg>
           </button>
 
-          {/* Header */}
           <div className="relative pt-12 px-8 pb-6 border-b border-cyan-500/20 bg-gradient-to-b from-cyan-500/10 to-transparent">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-14 h-14 bg-gradient-to-br from-cyan-400 to-cyan-600 rounded-xl flex items-center justify-center animate-pulse-glow">
@@ -316,16 +170,13 @@ export default function OTPLoginModal({
               </div>
             </div>
             <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-300 to-cyan-100 bg-clip-text text-transparent mb-2">
-              {step === 'phone' ? 'Login / Signup' : 'Verify OTP'}
+              Login / Signup
             </h2>
             <p className="text-gray-400 text-sm">
-              {step === 'phone'
-                ? 'Login with Google or Facebook'
-                : `We've sent a verification code to +91 ${phoneNumber}`}
+              Login with Google or Facebook
             </p>
           </div>
 
-          {/* Form */}
           <div className="relative p-8 space-y-5">
             {error && (
               <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg backdrop-blur-sm animate-slide-up">
@@ -333,7 +184,6 @@ export default function OTPLoginModal({
               </div>
             )}
 
-            {/* User Type Selection */}
             <div className="space-y-3">
               <label className="block text-sm font-semibold bg-gradient-to-r from-cyan-300 to-blue-300 bg-clip-text text-transparent">
                 I am a:
@@ -364,12 +214,11 @@ export default function OTPLoginModal({
               </div>
             </div>
 
-            {/* Google Sign In */}
             <button
               type="button"
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="w-full py-4 px-4 rounded-xl font-bold bg-white text-gray-900 hover:bg-gray-100 transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-cyan-500/20"
+              className="w-full py-4 px-4 rounded-xl font-bold bg-white text-gray-900 hover:bg-gray-100 disabled:opacity-75 transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-cyan-500/20"
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">
@@ -389,12 +238,11 @@ export default function OTPLoginModal({
               )}
             </button>
 
-            {/* Facebook Sign In */}
             <button
               type="button"
               onClick={handleFacebookSignIn}
               disabled={isLoading}
-              className="w-full py-4 px-4 rounded-xl font-bold bg-[#1877F2] text-white hover:bg-[#166fe5] transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-cyan-500/20"
+              className="w-full py-4 px-4 rounded-xl font-bold bg-[#1877F2] text-white hover:bg-[#166fe5] disabled:opacity-75 transition-all duration-300 flex items-center justify-center gap-3 shadow-lg hover:shadow-cyan-500/20"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -407,7 +255,6 @@ export default function OTPLoginModal({
             </p>
           </div>
 
-          {/* Footer */}
           <div className="relative px-8 py-6 border-t border-cyan-500/20 text-center text-sm text-gray-400">
             <p>
               By continuing, you agree to our{' '}

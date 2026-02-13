@@ -1,8 +1,45 @@
 import { NextResponse } from 'next/server';
 import { getRows, SHEET_TABS } from '@/lib/google-sheets';
+import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET() {
     try {
+        // 1. Try Fetching from Supabase (Primary Source)
+        try {
+            const { data: requests, error } = await supabaseAdmin
+                .from('service_requests')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (!error && requests) {
+                const mappedRequests = requests.map(req => ({
+                    id: req.request_id,
+                    customerId: req.customer_id,
+                    electricianId: req.electrician_id || '',
+                    customerName: req.customer_name || 'Unknown',
+                    electricianName: req.electrician_name || '', // Use denormalized name
+                    customerPhone: req.customer_phone || '',
+                    electricianPhone: req.electrician_phone || '',
+                    serviceType: req.service_type,
+                    urgency: 'Standard', // Default as not in DB strictly
+                    preferredDate: req.preferred_date,
+                    preferredSlot: req.preferred_slot,
+                    issueDetail: req.description || '',
+                    status: req.status,
+                    timestamp: req.created_at,
+                    city: req.customer_city || '',
+                    pincode: '',
+                    address: req.customer_address || ''
+                }));
+
+                return NextResponse.json({ success: true, requests: mappedRequests });
+            }
+        } catch (supaError) {
+            console.error('[AdminRequests] Supabase error, falling back to Sheets:', supaError);
+        }
+
+        // 2. Fallback to Google Sheets (Legacy)
+        console.warn('[AdminRequests] Using Google Sheets fallback');
         const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
 
         if (rows.length <= 1) {
@@ -12,7 +49,7 @@ export async function GET() {
         // Columns: 0:Timestamp, 1:RequestID, 2:CustomerID, 3:ElectricianID, 4:ServiceType, 
         // 5:Status, 6:Urgency, 7:PreferredDate, 8:PreferredSlot, 9:Description, 
         // 10:City, 11:Pincode, 12:Address, 13:Lat, 14:Lng
-        const requests = rows.slice(1).map((row: string[]) => ({
+        const sheetRequests = rows.slice(1).map((row: string[]) => ({
             id: row[1] || '',
             customerId: row[2] || '',
             electricianId: row[3] || '',
@@ -57,12 +94,12 @@ export async function GET() {
         }
 
         // Attach names
-        requests.forEach(req => {
+        sheetRequests.forEach((req: any) => {
             req.customerName = customerMap.get(req.customerId) || req.customerId;
             req.electricianName = electricianMap.get(req.electricianId) || req.electricianId;
         });
 
-        return NextResponse.json({ success: true, requests });
+        return NextResponse.json({ success: true, requests: sheetRequests });
 
     } catch (error) {
         console.error('Fetch requests error:', error);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRows, SHEET_TABS, updateRow, appendRow, ensureSheet } from '@/lib/google-sheets';
+import { supabaseAdmin } from '@/lib/supabase';
 import { ELECTRICIAN_STATUS } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Find the electrician row
+        // Find the electrician row in Google Sheets
         const rows = await getRows(SHEET_TABS.ELECTRICIANS);
         const rowIndex = rows.findIndex((row: string[]) => row[1] === electricianId);
 
@@ -32,8 +33,25 @@ export async function POST(request: NextRequest) {
             }, { status: 404 });
         }
 
-        // Update the status (column S = index 18, row number = rowIndex + 1 for 1-indexing)
+        // Update the status in Google Sheets (column S = index 18, row number = rowIndex + 1 for 1-indexing)
         await updateRow(SHEET_TABS.ELECTRICIANS, rowIndex + 1, 18, status);
+
+        // Also update in Supabase to keep data in sync
+        try {
+            // Supabase types updated
+            const { error: updateError } = await supabaseAdmin
+                .from('electricians')
+                .update({ status })
+                .eq('electrician_id', electricianId);
+
+            if (updateError) {
+                console.error('Failed to update status in Supabase:', updateError);
+                // Don't fail the whole request if Supabase update fails
+            }
+        } catch (supaErr) {
+            console.error('Supabase update error:', supaErr);
+            // Continue anyway as we've already updated Google Sheets
+        }
 
         // If status is VERIFIED, copy to Verified Technicians sheet
         if (status === 'VERIFIED') {

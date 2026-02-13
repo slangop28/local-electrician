@@ -4,17 +4,18 @@ import { REQUEST_STATUS } from '@/lib/utils';
 
 export async function POST(request: NextRequest) {
     try {
-        const { requestId, status, electricianId } = await request.json();
+        const body = await request.json();
+        const { requestId, status, electricianId, serviceType, urgency, preferredDate, preferredSlot, issueDetail } = body;
 
-        if (!requestId || !status) {
+        if (!requestId) {
             return NextResponse.json({
                 success: false,
-                error: 'Missing requestId or status'
+                error: 'Missing requestId'
             }, { status: 400 });
         }
 
-        // Validate status
-        if (!Object.values(REQUEST_STATUS).includes(status as keyof typeof REQUEST_STATUS)) {
+        // Validate status if provided
+        if (status && !Object.values(REQUEST_STATUS).includes(status as keyof typeof REQUEST_STATUS)) {
             return NextResponse.json({
                 success: false,
                 error: 'Invalid status'
@@ -32,19 +33,32 @@ export async function POST(request: NextRequest) {
             }, { status: 404 });
         }
 
-        // Update Status (column K = index 10)
-        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 10, status);
+        // Update Fields
+        // Electrician ID (Index 3)
+        if (electricianId) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 3, electricianId);
 
-        // Update Electrician ID if provided (column E = index 4)
-        if (requestId && status === 'ACCEPTED' && electricianId) {
-            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 4, electricianId);
-            // Also update Electrician Name (column F = index 5) - Optional but good for consistency
-            // Note: We might need to fetch electrician name here or pass it in body. For now ID is critical.
-        }
+        // Service Type (Index 4)
+        if (serviceType) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 4, serviceType);
+
+        // Status (Index 5)
+        if (status) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, status);
+
+        // Urgency (Index 6)
+        if (urgency) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 6, urgency);
+
+        // Preferred Date (Index 7)
+        if (preferredDate) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 7, preferredDate);
+
+        // Preferred Slot (Index 8)
+        if (preferredSlot) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 8, preferredSlot);
+
+        // Issue Detail (Index 9)
+        if (issueDetail) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 9, issueDetail);
+
 
         return NextResponse.json({
             success: true,
-            message: `Request ${requestId} status updated to ${status}`
+            message: `Request ${requestId} updated successfully`
         });
 
     } catch (error) {

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button, Card, Input, useToast } from '@/components/ui';
 import { PaymentModal } from '@/components/ui/PaymentModal';
 import NotificationBell, { Notification } from '@/components/ui/NotificationBell';
@@ -21,6 +22,7 @@ interface Electrician {
 
 export default function CustomerDashboard() {
     const { userProfile } = useAuth();
+    const router = useRouter();
     const { showToast } = useToast();
     const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
     const [locationAddress, setLocationAddress] = useState(''); // Display detected location
@@ -269,6 +271,51 @@ export default function CustomerDashboard() {
         }
     };
 
+    const handleBookElectrician = async (electricianId: string) => {
+        if (!userProfile?.id || !location) return;
+
+        try {
+            // Optimistic UI update
+            showToast('Sending booking request...', 'info');
+
+            const now = new Date();
+            const today = now.toISOString().split('T')[0];
+            const currentTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const response = await fetch('/api/request/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    customerId: userProfile.id,
+                    serviceType: 'General Electrical Work',
+                    location: {
+                        lat: location.lat,
+                        lng: location.lng,
+                        address: locationAddress || 'Current Location'
+                    },
+                    specificElectricianId: electricianId,
+                    preferredDate: today,
+                    preferredSlot: 'ASAP', // Or `Now (${currentTime})`
+                    urgency: 'High'
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showToast('Booking request sent!', 'success');
+                setActiveRequest(data.request); // Ensure this has the new fields
+                // Redirect to booking status page for better UX
+                router.push(`/booking-status?requestId=${data.requestId}`);
+            } else {
+                showToast(data.error || 'Failed to book electrician', 'error');
+            }
+        } catch (error) {
+            console.error('Booking error:', error);
+            showToast('Failed to book electrician. Please try again.', 'error');
+        }
+    };
+
     return (
         <main className="min-h-screen bg-gray-50">
             {/* Header */}
@@ -316,7 +363,10 @@ export default function CustomerDashboard() {
                                     Current Service
                                 </h2>
                                 <p className="text-gray-600 mt-1">
-                                    {activeRequest.serviceType} • {activeRequest.timestamp ? new Date(activeRequest.timestamp).toLocaleDateString() : ''}
+                                    <strong>ID:</strong> #{activeRequest.request_id || activeRequest.requestId}
+                                </p>
+                                <p className="text-gray-600">
+                                    {activeRequest.serviceType} • {activeRequest.preferredDate || 'Today'} • {activeRequest.preferredSlot || 'ASAP'}
                                 </p>
                                 <div className="mt-2 flex items-center gap-2">
                                     <span className={cn(
@@ -326,7 +376,7 @@ export default function CustomerDashboard() {
                                                 activeRequest.status === 'SUCCESS' ? "bg-green-100 text-green-700" :
                                                     "bg-gray-100 text-gray-700"
                                     )}>
-                                        {activeRequest.status === 'SUCCESS' ? 'Service Completed' : activeRequest.status}
+                                        {activeRequest.status === 'SUCCESS' ? 'Service Completed' : activeRequest.status === 'ACCEPTED' ? 'Booking Confirmed' : activeRequest.status}
                                     </span>
                                 </div>
 
@@ -369,19 +419,30 @@ export default function CustomerDashboard() {
                             )}
 
                             {activeRequest.status === 'ACCEPTED' && (
-                                <div className="text-sm text-blue-600 bg-blue-100 px-4 py-2 rounded-lg">
-                                    Electrician is on the way!
+                                <div className="flex flex-col gap-2">
+                                    <div className="text-sm text-blue-600 bg-blue-100 px-4 py-2 rounded-lg">
+                                        Electrician is on the way!
+                                    </div>
+                                    <Link href={`/booking-status?requestId=${activeRequest.request_id || activeRequest.requestId}`}>
+                                        <Button size="sm" variant="primary" className="w-full">View Details</Button>
+                                    </Link>
                                 </div>
                             )}
 
                             {activeRequest.status === 'NEW' && (
-                                <div className="text-sm text-amber-600 bg-amber-100 px-4 py-2 rounded-lg">
-                                    Searching for nearby electricians...
+                                <div className="flex flex-col gap-2">
+                                    <div className="text-sm text-amber-600 bg-amber-100 px-4 py-2 rounded-lg">
+                                        Searching for nearby electricians...
+                                    </div>
+                                    <Link href={`/booking-status?requestId=${activeRequest.request_id || activeRequest.requestId}`}>
+                                        <Button size="sm" variant="outline" className="w-full">Track Status</Button>
+                                    </Link>
                                 </div>
                             )}
                         </div>
                     </Card>
-                )}
+                )
+                }
 
                 {/* Payment Modal */}
                 <PaymentModal
@@ -448,179 +509,200 @@ export default function CustomerDashboard() {
 
                 {/* View Toggle */}
                 {/* Book Electrician Button - Glowing Blue */}
-                {location && (
-                    <div className="mb-8 bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-                        <div>
-                            <h2 className="text-2xl font-bold mb-2 text-gray-900">Need an Electrician Urgently?</h2>
-                            <p className="text-gray-600">Broadcast your request to all nearby electricians instantly.</p>
-                        </div>
-                        <Link href="/request/broadcast">
-                            <div className="relative group">
-                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/50 to-cyan-400/50 rounded-xl blur-xl group-hover:blur-2xl transition-all duration-300 animate-pulse-glow" />
-                                <Button size="lg" className="relative bg-gradient-to-r from-cyan-500 to-cyan-400 text-white font-bold rounded-xl hover:from-cyan-600 hover:to-cyan-500 border border-cyan-300/50 shadow-lg shadow-cyan-500/30 whitespace-nowrap px-8 py-4 text-lg animate-pulse">
-                                    <span className="mr-2">⚡</span>
-                                    Book Electrician
-                                </Button>
+                {
+                    location && (
+                        <div className="mb-8 bg-white/50 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                            <div>
+                                <h2 className="text-2xl font-bold mb-2 text-gray-900">Need an Electrician Urgently?</h2>
+                                <p className="text-gray-600">Broadcast your request to all nearby electricians instantly.</p>
                             </div>
-                        </Link>
-                    </div>
-                )}
+                            <Link href="/request/broadcast">
+                                <div className="relative group">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/50 to-cyan-400/50 rounded-xl blur-xl group-hover:blur-2xl transition-all duration-300 animate-pulse-glow" />
+                                    <Button size="lg" className="relative bg-gradient-to-r from-cyan-500 to-cyan-400 text-white font-bold rounded-xl hover:from-cyan-600 hover:to-cyan-500 border border-cyan-300/50 shadow-lg shadow-cyan-500/30 whitespace-nowrap px-8 py-4 text-lg animate-pulse">
+                                        <span className="mr-2">⚡</span>
+                                        Book Electrician
+                                    </Button>
+                                </div>
+                            </Link>
+                        </div>
+                    )
+                }
 
                 {/* Active Request Notification */}
-                {activeRequest && activeRequest.status === 'NEW' && activeRequest.electricianId === 'BROADCAST' && (
-                    <div className="mb-8">
-                        <Card variant="elevated" className="bg-blue-50 border-blue-200 animate-pulse">
-                            <div className="flex items-center justify-between gap-4">
+                {
+                    activeRequest && activeRequest.status === 'NEW' && activeRequest.electricianId === 'BROADCAST' && (
+                        <div className="mb-8">
+                            <Card variant="elevated" className="bg-blue-50 border-blue-200 animate-pulse">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                            <span className="text-2xl animate-spin-slow">📡</span>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-blue-900">Broadcasting Request...</h3>
+                                            <p className="text-blue-700 text-sm">Waiting for a nearby electrician to accept.</p>
+                                        </div>
+                                    </div>
+                                    <Link href="/profile">
+                                        <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100 bg-white">
+                                            View in Profile →
+                                        </Button>
+                                    </Link>
+                                </div>
+                            </Card>
+                        </div>
+                    )
+                }
+
+                {
+                    activeRequest && activeRequest.status === 'ACCEPTED' && (
+                        <div className="mb-8">
+                            <Card variant="elevated" className="bg-green-50 border-green-200">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                        <span className="text-2xl animate-spin-slow">📡</span>
+                                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                                        <span className="text-2xl">✅</span>
                                     </div>
                                     <div>
-                                        <h3 className="font-bold text-blue-900">Broadcasting Request...</h3>
-                                        <p className="text-blue-700 text-sm">Waiting for a nearby electrician to accept.</p>
+                                        <h3 className="font-bold text-green-900">Technician Allotted!</h3>
+                                        <p className="text-green-700 text-sm">
+                                            Electrician <strong>{activeRequest.electricianId}</strong> is on the way.
+                                        </p>
+                                    </div>
+                                    <div className="ml-auto">
+                                        <Button size="sm" variant="primary" onClick={() => window.location.reload()}>View Details</Button>
                                     </div>
                                 </div>
-                                <Link href="/profile">
-                                    <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100 bg-white">
-                                        View in Profile →
-                                    </Button>
-                                </Link>
-                            </div>
-                        </Card>
-                    </div>
-                )}
-
-                {activeRequest && activeRequest.status === 'ACCEPTED' && (
-                    <div className="mb-8">
-                        <Card variant="elevated" className="bg-green-50 border-green-200">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                                    <span className="text-2xl">✅</span>
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-green-900">Technician Allotted!</h3>
-                                    <p className="text-green-700 text-sm">
-                                        Electrician <strong>{activeRequest.electricianId}</strong> is on the way.
-                                    </p>
-                                </div>
-                                <div className="ml-auto">
-                                    <Button size="sm" variant="primary" onClick={() => window.location.reload()}>View Details</Button>
-                                </div>
-                            </div>
-                        </Card>
-                    </div>
-                )}
-
-                {location && (
-                    <div className="flex justify-between items-center mb-4">
-                        <p className="text-gray-600">
-                            {electricians.length > 0
-                                ? `Found ${electricians.length} electrician${electricians.length > 1 ? 's' : ''} nearby`
-                                : 'No electricians found within 15km'
-                            }
-                        </p>
-                        <div className="flex bg-gray-100 rounded-lg p-1">
-                            <button
-                                onClick={() => setViewMode('list')}
-                                className={cn(
-                                    'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-                                    viewMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-gray-600'
-                                )}
-                            >
-                                📋 List
-                            </button>
-                            <button
-                                onClick={() => setViewMode('map')}
-                                className={cn(
-                                    'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-                                    viewMode === 'map' ? 'bg-white shadow text-blue-600' : 'text-gray-600'
-                                )}
-                            >
-                                🗺️ Map
-                            </button>
+                            </Card>
                         </div>
-                    </div>
-                )}
+                    )
+                }
+
+                {
+                    location && (
+                        <div className="flex justify-between items-center mb-4">
+                            <p className="text-gray-600">
+                                {electricians.length > 0
+                                    ? `Found ${electricians.length} electrician${electricians.length > 1 ? 's' : ''} nearby`
+                                    : 'No electricians found within 15km'
+                                }
+                            </p>
+                            <div className="flex bg-gray-100 rounded-lg p-1">
+                                <button
+                                    onClick={() => setViewMode('list')}
+                                    className={cn(
+                                        'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                                        viewMode === 'list' ? 'bg-white shadow text-blue-600' : 'text-gray-600'
+                                    )}
+                                >
+                                    📋 List
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('map')}
+                                    className={cn(
+                                        'px-4 py-2 text-sm font-medium rounded-lg transition-colors',
+                                        viewMode === 'map' ? 'bg-white shadow text-blue-600' : 'text-gray-600'
+                                    )}
+                                >
+                                    🗺️ Map
+                                </button>
+                            </div>
+                        </div>
+                    )
+                }
 
                 {/* Loading State */}
-                {loading && location && (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[1, 2, 3].map((i) => (
-                            <Card key={i} variant="default" padding="md" className="animate-pulse">
-                                <div className="flex gap-4">
-                                    <div className="w-16 h-16 bg-gray-200 rounded-xl" />
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-5 bg-gray-200 rounded w-3/4" />
-                                        <div className="h-4 bg-gray-200 rounded w-1/2" />
-                                        <div className="h-4 bg-gray-200 rounded w-1/4" />
+                {
+                    loading && location && (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[1, 2, 3].map((i) => (
+                                <Card key={i} variant="default" padding="md" className="animate-pulse">
+                                    <div className="flex gap-4">
+                                        <div className="w-16 h-16 bg-gray-200 rounded-xl" />
+                                        <div className="flex-1 space-y-2">
+                                            <div className="h-5 bg-gray-200 rounded w-3/4" />
+                                            <div className="h-4 bg-gray-200 rounded w-1/2" />
+                                            <div className="h-4 bg-gray-200 rounded w-1/4" />
+                                        </div>
                                     </div>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
-                )}
+                                </Card>
+                            ))}
+                        </div>
+                    )
+                }
 
                 {/* Electricians List */}
-                {!loading && location && viewMode === 'list' && (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {electricians.length === 0 ? (
-                            <Card variant="bordered" padding="lg" className="col-span-full text-center">
-                                <div className="text-6xl mb-4">🔍</div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">No Electricians Found</h3>
-                                <p className="text-gray-600 mb-4">
-                                    We couldn&apos;t find verified electricians in your area yet.
-                                </p>
-                                <Link href="/electrician">
-                                    <Button variant="outline">
-                                        Know an electrician? Invite them to register
-                                    </Button>
-                                </Link>
-                            </Card>
-                        ) : (
-                            electricians.map((electrician) => (
-                                <ElectricianCard key={electrician.id} electrician={electrician} />
-                            ))
-                        )}
-                    </div>
-                )}
+                {
+                    !loading && location && viewMode === 'list' && (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {electricians.length === 0 ? (
+                                <Card variant="bordered" padding="lg" className="col-span-full text-center">
+                                    <div className="text-6xl mb-4">🔍</div>
+                                    <h3 className="text-xl font-bold text-gray-900 mb-2">No Electricians Found</h3>
+                                    <p className="text-gray-600 mb-4">
+                                        We couldn&apos;t find verified electricians in your area yet.
+                                    </p>
+                                    <Link href="/electrician">
+                                        <Button variant="outline">
+                                            Know an electrician? Invite them to register
+                                        </Button>
+                                    </Link>
+                                </Card>
+                            ) : (
+                                electricians.map((electrician) => (
+                                    <ElectricianCard
+                                        key={electrician.id}
+                                        electrician={electrician}
+                                        onBook={handleBookElectrician}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    )
+                }
 
                 {/* Map View Placeholder */}
-                {!loading && location && viewMode === 'map' && (
-                    <Card variant="bordered" padding="none" className="h-[500px] flex items-center justify-center">
-                        <div className="text-center">
-                            <div className="text-6xl mb-4">🗺️</div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">Map View</h3>
-                            <p className="text-gray-600">
-                                Map integration coming soon!
-                            </p>
-                            <p className="text-sm text-gray-400 mt-2">
-                                Showing {electricians.length} electricians in list view
-                            </p>
-                        </div>
-                    </Card>
-                )}
+                {
+                    !loading && location && viewMode === 'map' && (
+                        <Card variant="bordered" padding="none" className="h-[500px] flex items-center justify-center">
+// ... keeps existing map placeholder ...
+                            <div className="text-center">
+                                <div className="text-6xl mb-4">🗺️</div>
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">Map View</h3>
+                                <p className="text-gray-600">
+                                    Map integration coming soon!
+                                </p>
+                                <p className="text-sm text-gray-400 mt-2">
+                                    Showing {electricians.length} electricians in list view
+                                </p>
+                            </div>
+                        </Card>
+                    )
+                }
 
                 {/* No Location State */}
-                {!location && !loading && (
-                    <Card variant="bordered" padding="lg" className="text-center">
-                        <div className="text-6xl mb-4">📍</div>
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">Share Your Location</h3>
-                        <p className="text-gray-600 mb-6">
-                            We need your location to find electricians near you
-                        </p>
-                        <Button onClick={handleGetLocation} loading={gettingLocation}>
-                            <span className="mr-2">🎯</span>
-                            Enable Location
-                        </Button>
-                    </Card>
-                )}
-            </div>
-        </main>
+                {
+                    !location && !loading && (
+                        <Card variant="bordered" padding="lg" className="text-center">
+                            <div className="text-6xl mb-4">📍</div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">Share Your Location</h3>
+                            <p className="text-gray-600 mb-6">
+                                We need your location to find electricians near you
+                            </p>
+                            <Button onClick={handleGetLocation} loading={gettingLocation}>
+                                <span className="mr-2">🎯</span>
+                                Enable Location
+                            </Button>
+                        </Card>
+                    )
+                }
+            </div >
+        </main >
     );
 }
 
 // Electrician Card Component
-function ElectricianCard({ electrician }: { electrician: Electrician }) {
+function ElectricianCard({ electrician, onBook }: { electrician: Electrician; onBook: (id: string) => void }) {
     return (
         <Card variant="default" hover padding="md" className="group">
             <div className="flex gap-4">
@@ -638,7 +720,7 @@ function ElectricianCard({ electrician }: { electrician: Electrician }) {
                             ✓ Verified
                         </span>
                         <span className="text-xs text-gray-400">
-                            {electrician.distance} km away
+                            {electrician.distance.toFixed(1)} km away
                         </span>
                     </div>
                 </div>
@@ -654,9 +736,15 @@ function ElectricianCard({ electrician }: { electrician: Electrician }) {
                 <span className="text-sm text-gray-500 ml-1">5.0 (New)</span>
             </div>
 
-            {/* Book Button - Removed/Changed */}
-            <Button fullWidth size="sm" variant="outline" className="text-gray-400 border-gray-200 cursor-not-allowed" disabled>
-                Verified Partner
+            {/* Book Button - Redirect to broadcast with electricianId */}
+            <Button
+                fullWidth
+                size="sm"
+                variant="outline"
+                className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                onClick={() => window.location.href = `/request/broadcast?electricianId=${electrician.id}&electricianName=${encodeURIComponent(electrician.name)}`}
+            >
+                Book This Electrician
             </Button>
         </Card>
     );

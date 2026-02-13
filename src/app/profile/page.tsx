@@ -5,33 +5,20 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { useAuth } from '@/lib/AuthContext';
-import { OngoingServiceFetcher } from '@/components/OngoingServiceFetcher';
-import { Button, Card, ReviewModal } from '@/components/ui';
-
-interface ServiceRequest {
-    requestId: string;
-    electricianId: string;
-    serviceType: string;
-    status: string;
-    preferredDate: string;
-    preferredSlot: string;
-    timestamp: string;
-    rating?: number;
-    electricianName?: string;
-    electricianPhone?: string;
-}
+import { Button, Card } from '@/components/ui';
+import UpdatePhoneForm from '@/components/UpdatePhoneForm';
 
 export default function ProfilePage() {
     const router = useRouter();
-    const { userProfile, isAuthenticated, isLoading, login, logout } = useAuth();
-    const [activeTab, setActiveTab] = useState<'profile' | 'history' | 'address' | 'ongoing'>('profile');
+    const { userProfile, isAuthenticated, isLoading, logout, login } = useAuth();
+    const [activeTab, setActiveTab] = useState<'profile' | 'address' | 'phone' | 'history'>('profile');
+    const [history, setHistory] = useState<any[]>([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
     const handleLogout = async () => {
         await logout();
         router.push('/');
     };
-    const [serviceHistory, setServiceHistory] = useState<ServiceRequest[]>([]);
-    const [loadingHistory, setLoadingHistory] = useState(false);
 
     // Address Editing State
     const [isEditingAddress, setIsEditingAddress] = useState(false);
@@ -43,101 +30,6 @@ export default function ProfilePage() {
 
     const [isSavingAddress, setIsSavingAddress] = useState(false);
 
-    // Review State
-    const [showReviewModal, setShowReviewModal] = useState(false);
-    const [reviewRequest, setReviewRequest] = useState<ServiceRequest | null>(null);
-    const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-
-    // Set active tab from URL params (client-side only)
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const params = new URLSearchParams(window.location.search);
-            const tab = params.get('tab');
-            if (tab === 'history') {
-                setActiveTab('history');
-            }
-        }
-    }, []);
-
-    // Fetch service history when tab changes to history
-    useEffect(() => {
-        if (userProfile?.phone && userProfile?.userType === 'customer' && activeTab === 'history') {
-            fetchServiceHistory();
-        }
-    }, [userProfile, activeTab]);
-
-    const fetchServiceHistory = async () => {
-        if (!userProfile?.phone) {
-            console.log('[Profile] No phone in userProfile, skipping fetch');
-            return;
-        }
-
-        console.log('[Profile] Fetching service history for phone:', userProfile.phone);
-        setLoadingHistory(true);
-        try {
-            const response = await fetch(`/api/customer/history?phone=${userProfile.phone}`);
-            const data = await response.json();
-            console.log('[Profile] Service history API response:', data);
-
-            if (data.success) {
-                console.log('[Profile] Found', data.requests?.length || 0, 'service requests');
-                setServiceHistory(data.requests || []);
-
-                // Check if there's a recent completed request without a rating
-                const unreviewed = (data.requests || []).find(
-                    (r: ServiceRequest) => r.status === 'SUCCESS' && !r.rating
-                );
-
-                if (unreviewed) {
-                    setReviewRequest(unreviewed);
-                    setShowReviewModal(true);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to fetch service history:', error);
-        } finally {
-            setLoadingHistory(false);
-        }
-    };
-
-    // Submit Review
-    const handleReviewSubmit = async (rating: number, comment: string) => {
-        if (!reviewRequest) return;
-
-        setIsSubmittingReview(true);
-        try {
-            const response = await fetch('/api/request/review', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    requestId: reviewRequest.requestId,
-                    rating,
-                    comment
-                })
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                setShowReviewModal(false);
-                // Refresh history
-                fetchServiceHistory();
-                alert('Thank you for your review!');
-            } else {
-                alert(data.error || 'Failed to submit review');
-            }
-        } catch (error) {
-            console.error('Review submit error:', error);
-            alert('Failed to submit review');
-        } finally {
-            setIsSubmittingReview(false);
-        }
-    };
-
-    // Broadcast State
-    const [activeBroadcast, setActiveBroadcast] = useState<ServiceRequest | null>(null);
-    const [isCancellingBroadcast, setIsCancellingBroadcast] = useState(false);
-
     // Redirect if not authenticated
     useEffect(() => {
         if (!isLoading && !isAuthenticated) {
@@ -145,60 +37,25 @@ export default function ProfilePage() {
         }
     }, [isLoading, isAuthenticated, router]);
 
-    // Fetch Active Broadcast
     useEffect(() => {
-        if (userProfile?.phone) {
-            fetchActiveBroadcast();
-
-            // Poll for updates every 3 seconds for faster real-time updates
-            const interval = setInterval(fetchActiveBroadcast, 3000);
-            return () => clearInterval(interval);
+        if (activeTab === 'history' && userProfile?.phone) {
+            const fetchHistory = async () => {
+                setIsLoadingHistory(true);
+                try {
+                    const res = await fetch(`/api/customer/history?phone=${userProfile.phone}`);
+                    const data = await res.json();
+                    if (data.success) {
+                        setHistory(data.serviceRequests || []);
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch history:', error);
+                } finally {
+                    setIsLoadingHistory(false);
+                }
+            };
+            fetchHistory();
         }
-    }, [userProfile]);
-
-    const fetchActiveBroadcast = async () => {
-        if (!userProfile?.phone) return;
-        try {
-            const response = await fetch(`/api/customer/active-request?customerId=${userProfile.phone}`);
-            const data = await response.json();
-            if (data.success && data.activeRequest && data.activeRequest.status === 'NEW' && data.activeRequest.electricianId === 'BROADCAST') {
-                setActiveBroadcast(data.activeRequest);
-            } else {
-                setActiveBroadcast(null);
-            }
-        } catch (error) {
-            console.error('Failed to fetch active broadcast:', error);
-        }
-    };
-
-    const handleStopBroadcast = async () => {
-        if (!activeBroadcast) return;
-
-        if (!confirm('Are you sure you want to stop looking for an electrician?')) return;
-
-        setIsCancellingBroadcast(true);
-        try {
-            const response = await fetch('/api/request/cancel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ requestId: activeBroadcast.requestId })
-            });
-            const data = await response.json();
-            if (data.success) {
-                alert('Broadcast stopped successfully.');
-                setActiveBroadcast(null);
-                // Refresh history if open
-                if (activeTab === 'history') fetchServiceHistory();
-            } else {
-                alert(data.error || 'Failed to stop broadcast');
-            }
-        } catch (error) {
-            console.error('Cancel error:', error);
-            alert('Failed to stop broadcast');
-        } finally {
-            setIsCancellingBroadcast(false);
-        }
-    };
+    }, [activeTab, userProfile]);
 
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -241,16 +98,6 @@ export default function ProfilePage() {
     }
 
     if (!userProfile) return null;
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'SUCCESS': return 'bg-green-100 text-green-700';
-            case 'ACCEPTED': return 'bg-blue-100 text-blue-700';
-            case 'NEW': return 'bg-yellow-100 text-yellow-700';
-            case 'CANCELLED': return 'bg-red-100 text-red-700';
-            default: return 'bg-gray-100 text-gray-700';
-        }
-    };
 
     return (
         <main className="min-h-screen bg-gray-50">
@@ -320,61 +167,18 @@ export default function ProfilePage() {
                     >
                         My Address
                     </button>
-                    {userProfile.userType === 'customer' && (
-                        <button
-                            onClick={() => {
-                                if (serviceHistory.length > 0) {
-                                    // Navigate directly to the most recent service request
-                                    router.push(`/service-request/${serviceHistory[0].requestId}`);
-                                } else {
-                                    setActiveTab('history');
-                                }
-                            }}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'history'
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100'
-                                }`}
-                        >
-                            Service Request History
-                        </button>
-                    )}
-                    {userProfile.userType === 'customer' && (
-                        <button
-                            onClick={() => setActiveTab('ongoing')}
-                            className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'ongoing'
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-100'
-                                }`}
-                        >
-                            Ongoing Service
-                        </button>
-                    )}
+                    <button
+                        onClick={() => {
+                            setActiveTab('history');
+                        }}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === 'history'
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100'
+                            }`}
+                    >
+                        Services
+                    </button>
                 </div>
-
-                {/* Active Broadcast Alert */}
-                {activeBroadcast && (
-                    <div className="mb-6 bg-blue-50 border border-blue-200 rounded-2xl p-6 shadow-lg shadow-blue-500/10 animate-pulse">
-                        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl animate-bounce">
-                                    📡
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-blue-900 text-lg">Finding Electrician...</h3>
-                                    <p className="text-blue-700">Detailed Request: {activeBroadcast.serviceType}</p>
-                                    <p className="text-sm text-blue-500">We are broadcasting your request to nearby electricians.</p>
-                                </div>
-                            </div>
-                            <Button
-                                onClick={handleStopBroadcast}
-                                disabled={isCancellingBroadcast}
-                                className="bg-red-500 hover:bg-red-600 text-white shadow-md w-full md:w-auto"
-                            >
-                                {isCancellingBroadcast ? 'Stopping...' : '🛑 Stop Finding Electrician'}
-                            </Button>
-                        </div>
-                    </div>
-                )}
 
                 {/* Profile Tab */}
                 {activeTab === 'profile' && (
@@ -388,9 +192,17 @@ export default function ProfilePage() {
                             </div>
 
                             {userProfile.phone && (
-                                <div className="flex justify-between py-3 border-b border-gray-100">
+                                <div className="flex justify-between py-3 border-b border-gray-100 items-center">
                                     <span className="text-gray-500">Phone Number</span>
-                                    <span className="font-medium text-gray-900">+91 {userProfile.phone}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium text-gray-900">+91 {userProfile.phone}</span>
+                                        <button
+                                            onClick={() => setActiveTab('phone')}
+                                            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded transition-colors"
+                                        >
+                                            Update
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -441,94 +253,25 @@ export default function ProfilePage() {
                     </Card>
                 )}
 
-                {/* History Tab - Only for Customers */}
-                {activeTab === 'history' && userProfile.userType === 'customer' && (
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className="font-bold text-gray-900">Request History</h3>
-                            <Button size="sm" variant="outline" onClick={fetchServiceHistory} loading={loadingHistory}>
-                                🔄 Refresh
+                {/* Update Phone Tab */}
+                {activeTab === 'phone' && (
+                    <Card variant="elevated" padding="lg">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-gray-900">Update Phone Number</h2>
+                            <Button size="sm" variant="outline" onClick={() => setActiveTab('profile')}>
+                                Cancel
                             </Button>
                         </div>
-                        {loadingHistory ? (
-                            <Card variant="elevated" padding="lg">
-                                <div className="flex items-center justify-center py-8">
-                                    <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full"></div>
-                                </div>
-                            </Card>
-                        ) : serviceHistory.length === 0 ? (
-                            <Card variant="elevated" padding="lg">
-                                <div className="text-center py-8">
-                                    <span className="text-4xl mb-4 block">📋</span>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No Service Requests Yet</h3>
-                                    <p className="text-gray-500 mb-6">You haven&apos;t made any service requests yet.</p>
-                                    <Link href="/app">
-                                        <Button>Find an Electrician</Button>
-                                    </Link>
-                                </div>
-                            </Card>
-                        ) : (
-                            serviceHistory.map((request) => (
-                                <Link key={request.requestId} href={`/service-request/${request.requestId}`}>
-                                    <Card variant="elevated" padding="md" className="hover:shadow-lg transition-shadow cursor-pointer hover:border-cyan-200 border border-transparent">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <div>
-                                                <h3 className="font-semibold text-gray-900">{request.serviceType}</h3>
-                                                {request.electricianName && request.electricianName !== 'BROADCAST' && (
-                                                    <div className="mt-1">
-                                                        <p className="text-sm text-gray-600">👨‍🔧 {request.electricianName}</p>
-                                                    </div>
-                                                )}
-                                                {(!request.electricianName || request.electricianName === 'BROADCAST' || request.electricianName === 'Pending Assignment') && (
-                                                    <p className="text-sm text-orange-500 mt-1">⏳ Awaiting Electrician</p>
-                                                )}
-                                                <p className="text-xs text-gray-400 mt-1">ID: {request.requestId}</p>
-                                            </div>
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
-                                                {request.status}
-                                            </span>
-                                        </div>
-                                        <div className="text-sm text-gray-600">
-                                            <p>📅 {request.preferredDate || 'Not specified'} • {request.preferredSlot || 'Flexible'}</p>
-                                            <p className="mt-1 text-xs text-gray-400">Booked on {new Date(request.timestamp).toLocaleDateString()}</p>
-                                        </div>
-                                        <div className="mt-3 flex justify-end">
-                                            <span className="text-cyan-600 text-sm font-medium">View Details →</span>
-                                        </div>
-                                    </Card>
-                                </Link>
-                            ))
-                        )}
-                    </div>
-                )}
-                {/* Ongoing Service Tab */}
-                {activeTab === 'ongoing' && (
-                    <div className="space-y-6">
-                        {activeBroadcast && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 shadow-lg shadow-blue-500/10 animate-pulse">
-                                <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl animate-bounce">
-                                            📡
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-blue-900 text-lg">Finding Electrician...</h3>
-                                            <p className="text-blue-700">Request: {activeBroadcast.serviceType}</p>
-                                        </div>
-                                    </div>
-                                    <Button
-                                        onClick={handleStopBroadcast}
-                                        disabled={isCancellingBroadcast}
-                                        className="bg-red-500 hover:bg-red-600 text-white shadow-md"
-                                    >
-                                        {isCancellingBroadcast ? 'Stopping...' : 'Stop'}
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
 
-                        <OngoingServiceFetcher userPhone={userProfile.phone} getStatusColor={getStatusColor} />
-                    </div>
+                        <UpdatePhoneForm
+                            userProfile={userProfile}
+                            onSuccess={(newPhone) => {
+                                login({ ...userProfile, phone: newPhone });
+                                setActiveTab('profile');
+                                alert('Phone number updated successfully!');
+                            }}
+                        />
+                    </Card>
                 )}
 
                 {/* Address Tab */}
@@ -651,19 +394,74 @@ export default function ProfilePage() {
                         )}
                     </Card>
                 )}
-            </div>
 
-            {/* Review Modal */}
-            {reviewRequest && (
-                <ReviewModal
-                    isOpen={showReviewModal}
-                    onClose={() => setShowReviewModal(false)}
-                    onSubmit={handleReviewSubmit}
-                    isSubmitting={isSubmittingReview}
-                    serviceType={reviewRequest.serviceType}
-                    electricianName={reviewRequest.electricianName || 'the electrician'}
-                />
-            )}
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                    <div className="space-y-4">
+                        <h2 className="text-xl font-bold text-gray-900 mb-6">Service History</h2>
+
+                        {isLoadingHistory ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                <p className="text-gray-500">Loading your history...</p>
+                            </div>
+                        ) : history.length === 0 ? (
+                            <Card variant="elevated" padding="lg" className="text-center py-12">
+                                <span className="text-5xl mb-4 block">🔌</span>
+                                <h3 className="text-lg font-bold text-gray-900">No Service Requests Yet</h3>
+                                <p className="text-gray-500 mb-6">You haven't booked any electrical services yet.</p>
+                                <Link href="/app">
+                                    <Button>Book an Electrician Now</Button>
+                                </Link>
+                            </Card>
+                        ) : (
+                            <div className="grid gap-4">
+                                {history.map((req) => (
+                                    <Link key={req.requestId} href={`/service-request/${req.requestId}`}>
+                                        <Card variant="elevated" className="hover:border-cyan-300 transition-all cursor-pointer overflow-hidden">
+                                            <div className="flex flex-col sm:flex-row justify-between p-5 gap-4">
+                                                <div className="flex gap-4">
+                                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${req.status === 'SUCCESS' ? 'bg-emerald-100' :
+                                                        req.status === 'CANCELLED' ? 'bg-red-100' : 'bg-blue-100'
+                                                        }`}>
+                                                        {req.status === 'SUCCESS' ? '✅' : req.status === 'CANCELLED' ? '❌' : '⏳'}
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-gray-900">{req.serviceType}</h3>
+                                                        <p className="text-sm text-gray-500 line-clamp-1">{req.description || 'No description provided'}</p>
+                                                        <div className="flex items-center gap-3 mt-2">
+                                                            <span className="text-xs font-medium text-gray-400">#{req.requestId}</span>
+                                                            <span className="text-xs text-gray-400">•</span>
+                                                            <span className="text-xs text-gray-500">{new Date(req.createdAt).toLocaleDateString('en-IN', {
+                                                                day: 'numeric',
+                                                                month: 'short',
+                                                                year: 'numeric'
+                                                            })}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-row sm:flex-col justify-between items-end gap-2">
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${req.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-700' :
+                                                        req.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                                                            'bg-blue-100 text-blue-700'
+                                                        }`}>
+                                                        {req.status === 'SUCCESS' ? 'COMPLETED' : req.status}
+                                                    </span>
+                                                    {req.electricianName && (
+                                                        <p className="text-xs text-gray-500">
+                                                            👷 <span className="font-medium text-gray-700">{req.electricianName}</span>
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </main>
     );
 }

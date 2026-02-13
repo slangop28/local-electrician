@@ -1,8 +1,7 @@
-// Last updated: 2026-01-29T05:06:00Z - Fixed TypeScript null type error
+// Last updated: 2026-02-12 - Updated to read from Supabase (primary data source)
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows, SHEET_TABS } from '@/lib/google-sheets';
 import { calculateDistance } from '@/lib/geocoding';
-import { ELECTRICIAN_STATUS } from '@/lib/utils';
+import { supabaseAdmin } from '@/lib/supabase';
 
 interface Electrician {
     id: string;
@@ -30,31 +29,37 @@ export async function GET(request: NextRequest) {
             }, { status: 400 });
         }
 
-        // Get all electricians from sheet
-        const rows = await getRows(SHEET_TABS.ELECTRICIANS);
+        // Get all VERIFIED electricians from Supabase
+        const { data: rows, error } = await supabaseAdmin
+            .from('electricians')
+            .select('electrician_id, name, phone_primary, city, area, latitude, longitude, status')
+            .eq('status', 'VERIFIED');
 
-        if (rows.length <= 1) {
-            // Only header row or empty
+        if (error) {
+            console.error('Supabase error:', error);
+            return NextResponse.json({
+                success: false,
+                error: 'Failed to fetch electricians'
+            }, { status: 500 });
+        }
+
+        if (!rows || rows.length === 0) {
             return NextResponse.json({
                 success: true,
                 electricians: [],
-                message: 'No electricians found'
+                message: 'No verified electricians found'
             });
         }
 
-        // Skip header row and process electricians
+        // Process and filter by distance
         const allElectricians: Electrician[] = [];
 
-        for (const row of rows.slice(1) as string[][]) {
-            // Column indices based on sheet structure:
-            // 0: Timestamp, 1: ElectricianID, 2: NameAsPerAadhaar, 3: PhonePrimary,
-            // 10: City, 9: Area, 14: Lat, 15: Lng, 18: Status
-            const electricianLat = parseFloat(row[14] || '0');
-            const electricianLng = parseFloat(row[15] || '0');
-            const status = row[18] || 'PENDING';
+        for (const row of rows) {
+            const electricianLat = parseFloat(row.latitude || '0');
+            const electricianLng = parseFloat(row.longitude || '0');
 
-            // Only include verified electricians
-            if (status !== ELECTRICIAN_STATUS.VERIFIED) {
+            // Skip if no coordinates
+            if (!electricianLat || !electricianLng) {
                 continue;
             }
 
@@ -67,15 +72,15 @@ export async function GET(request: NextRequest) {
             }
 
             allElectricians.push({
-                id: row[1] || '',
-                name: row[2] || '',
-                phone: row[3] || '',
-                city: row[10] || '',
-                area: row[9] || '',
+                id: row.electrician_id || '',
+                name: row.name || '',
+                phone: row.phone_primary || '',
+                city: row.city || '',
+                area: row.area || '',
                 lat: electricianLat,
                 lng: electricianLng,
                 distance: Math.round(distance * 10) / 10,
-                status,
+                status: row.status || 'VERIFIED',
             });
         }
 

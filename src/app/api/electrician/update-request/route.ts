@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
     try {
-        const { requestId, electricianId, action } = await request.json();
+        const { requestId, electricianId, action, electricianName, electricianPhone, electricianCity } = await request.json();
 
         if (!requestId || !electricianId || !action) {
             return NextResponse.json({
@@ -31,115 +31,143 @@ export async function POST(request: NextRequest) {
         }
 
         // ===== 1. Update Supabase (primary) =====
+        let supaSuccess = false;
         try {
             // Read current request from Supabase
-            const { data: supaRequest } = await supabaseAdmin
+            const { data: supaRequest, error: fetchError } = await supabaseAdmin
                 .from('service_requests')
                 .select('*')
                 .eq('request_id', requestId)
                 .single();
 
-            if (supaRequest) {
-                const currentElectricianId = supaRequest.electrician_id;
-                const currentStatus = supaRequest.status;
-
-                // Case 1: Accepting a BROADCAST request
-                if (currentElectricianId === 'BROADCAST') {
-                    if (action !== 'accept') {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Broadcast requests can only be accepted'
-                        }, { status: 400 });
-                    }
-
-                    if (currentStatus !== REQUEST_STATUS.NEW) {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Request is no longer available'
-                        }, { status: 400 });
-                    }
-
-                    // Assign to this electrician in Supabase
-                    await supabaseAdmin
-                        .from('service_requests')
-                        .update({
-                            electrician_id: electricianId,
-                            status: REQUEST_STATUS.ACCEPTED
-                        })
-                        .eq('request_id', requestId);
-
-                    // Log acceptance
-                    await supabaseAdmin.from('service_request_logs').insert({
-                        request_id: requestId,
-                        status: REQUEST_STATUS.ACCEPTED,
-                        description: `Request accepted by electrician ${electricianId}`
-                    });
-
-                } else {
-                    // Case 2: Standard flow
-                    if (currentElectricianId !== electricianId) {
-                        return NextResponse.json({
-                            success: false,
-                            error: 'Request does not belong to this electrician'
-                        }, { status: 403 });
-                    }
-
-                    const updateData: Record<string, string> = { status: newStatus };
-                    if (action === 'complete') {
-                        updateData.completed_at = new Date().toISOString();
-                    }
-
-                    await supabaseAdmin
-                        .from('service_requests')
-                        .update(updateData)
-                        .eq('request_id', requestId);
-
-                    // Log status change
-                    await supabaseAdmin.from('service_request_logs').insert({
-                        request_id: requestId,
-                        status: newStatus,
-                        description: `Status updated to ${newStatus}`
-                    });
-                }
+            if (fetchError || !supaRequest) {
+                console.error('Request not found in Supabase:', fetchError);
+                return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
             }
+
+            const currentElectricianId = supaRequest.electrician_id;
+            const currentStatus = supaRequest.status;
+
+            if (action === 'accept') {
+                // Anyone can accept a BROADCAST request if it's NEW
+                // OR a specific electrician can accept a request assigned to them if it's NEW
+                const isBroadcast = currentElectricianId === 'BROADCAST';
+                const isAssignedToMe = currentElectricianId === electricianId;
+
+                if (!isBroadcast && !isAssignedToMe) {
+                    return NextResponse.json({ success: false, error: 'This request is not assigned to you.' }, { status: 403 });
+                }
+
+                if (currentStatus !== REQUEST_STATUS.NEW) {
+                    return NextResponse.json({ success: false, error: 'Request is already accepted or cancelled.' }, { status: 400 });
+                }
+
+                const { error: updateError } = await supabaseAdmin
+                    .from('service_requests')
+                    .update({
+                        electrician_id: electricianId,
+                        electrician_name: electricianName || '',
+                        electrician_phone: electricianPhone || '',
+                        electrician_city: electricianCity || '',
+                        status: REQUEST_STATUS.ACCEPTED,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('request_id', requestId);
+
+                if (updateError) throw updateError;
+                supaSuccess = true;
+
+                // Log acceptance
+                await supabaseAdmin.from('service_request_logs').insert({
+                    request_id: requestId,
+                    status: REQUEST_STATUS.ACCEPTED,
+                    description: `Request accepted by electrician ${electricianName} (${electricianId})`
+                });
+
+            } else {
+                // For other actions (complete, cancel), electrician must match
+                if (currentElectricianId !== electricianId) {
+                    return NextResponse.json({ success: false, error: 'Unauthorized action.' }, { status: 403 });
+                }
+
+                const updateData: Record<string, any> = {
+                    status: newStatus,
+                    updated_at: new Date().toISOString()
+                };
+
+                if (action === 'complete') {
+                    updateData.completed_at = new Date().toISOString();
+                }
+
+                const { error: updateError } = await supabaseAdmin
+                    .from('service_requests')
+                    .update(updateData)
+                    .eq('request_id', requestId);
+
+                if (updateError) throw updateError;
+                supaSuccess = true;
+
+                await supabaseAdmin.from('service_request_logs').insert({
+                    request_id: requestId,
+                    status: newStatus,
+                    description: `Status updated to ${newStatus}`
+                });
+            }
+
         } catch (supaErr) {
             console.error('[UpdateRequest] Supabase error:', supaErr);
+            return NextResponse.json({ success: false, error: 'Database update failed' }, { status: 500 });
         }
 
         // ===== 2. Update Google Sheets (secondary) =====
         try {
             const rows = await getRows(SHEET_TABS.SERVICE_REQUESTS);
-            const rowIndex = rows.findIndex((row: string[]) => row[1] === requestId);
+            const headers = rows[0];
+            const idIndex = headers.indexOf('RequestID');
+            const statusIndex = headers.indexOf('Status');
+            const electricianIdIndex = headers.indexOf('ElectricianID'); // Create/Find index
 
-            if (rowIndex !== -1) {
-                const requestRow = rows[rowIndex];
-                const currentElectricianId = requestRow[3];
+            if (idIndex === -1) throw new Error('RequestID column not found in Sheets');
 
-                if (currentElectricianId === 'BROADCAST' && action === 'accept') {
-                    await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 3, electricianId);
-                    await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, REQUEST_STATUS.ACCEPTED);
-                } else {
-                    await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, 5, newStatus);
-
-                    if (action === 'complete') {
-                        const headers = rows[0];
-                        let completedAtIndex = headers.indexOf('CompletedAt');
-                        if (completedAtIndex === -1) {
-                            completedAtIndex = headers.length;
-                            await updateRow(SHEET_TABS.SERVICE_REQUESTS, 1, completedAtIndex, 'CompletedAt');
-                        }
-                        await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex + 1, completedAtIndex, new Date().toISOString());
-                    }
+            let rowIndex = -1;
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][idIndex] === requestId) {
+                    rowIndex = i + 1; // 1-based index for updateRow
+                    break;
                 }
             }
+
+            if (rowIndex !== -1) {
+                if (action === 'accept') {
+                    // Update Status AND ElectricianID
+                    if (statusIndex !== -1) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex, statusIndex, REQUEST_STATUS.ACCEPTED);
+                    if (electricianIdIndex !== -1) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex, electricianIdIndex, electricianId);
+                } else {
+                    if (statusIndex !== -1) await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex, statusIndex, newStatus);
+
+                    if (action === 'complete') {
+                        let completedAtIndex = headers.indexOf('CompletedAt');
+                        if (completedAtIndex === -1) {
+                            // Try to append column? For now, let's assume it exists or ignore
+                            console.warn('CompletedAt column missing in Sheets');
+                        } else {
+                            await updateRow(SHEET_TABS.SERVICE_REQUESTS, rowIndex, completedAtIndex, new Date().toISOString());
+                        }
+                    }
+                }
+            } else {
+                console.error('Request not found in Google Sheets to update');
+            }
+
         } catch (sheetsErr) {
             console.error('[UpdateRequest] Google Sheets error:', sheetsErr);
+            // Don't fail the request if Sheets fails, as Supabase is primary
         }
 
         return NextResponse.json({
             success: true,
-            message: `Request ${action}ed successfully`,
-            newStatus: action === 'accept' && newStatus === REQUEST_STATUS.ACCEPTED ? REQUEST_STATUS.ACCEPTED : newStatus
+            message: `Request ${action}d successfully`,
+            newStatus: action === 'accept' ? REQUEST_STATUS.ACCEPTED : newStatus
         });
 
     } catch (error) {

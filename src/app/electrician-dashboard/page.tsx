@@ -9,52 +9,13 @@ import NotificationBell, { Notification } from '@/components/ui/NotificationBell
 import { cn } from '@/lib/utils';
 import { LiveTrackingMap } from '@/components/LiveTrackingMap';
 
-interface ElectricianData {
-    electricianId: string;
-    name: string;
-    phonePrimary: string;
-    phoneSecondary: string;
-    city: string;
-    area: string;
-    state: string;
-    pincode: string;
-    status: string;
-    referralCode: string;
-    aadhaarFrontURL?: string;
-    aadhaarBackURL?: string;
-    panFrontURL?: string;
-    totalReferrals: number;
-    servicesCompleted: number;
-    rating?: number | string;
-    totalReviews?: number;
-    joinedDate?: string;
-    bankDetails?: {
-        accountName: string;
-        accountNumber: string;
-        ifscCode: string;
-        status: string;
-    };
-}
-
-interface ServiceRequest {
-    requestId: string;
-    customerName: string;
-    customerPhone: string;
-    customerAddress?: string;
-    customerCity?: string;
-    serviceType: string;
-    status: string;
-    preferredDate: string;
-    preferredSlot: string;
-    timestamp: string;
-    description?: string;
-}
+import { Electrician, ServiceRequest } from '@/types';
 
 export default function ElectricianDashboard() {
     const router = useRouter();
     const { userProfile, isAuthenticated, isLoading, logout } = useAuth();
     const { showToast } = useToast();
-    const [electricianData, setElectricianData] = useState<ElectricianData | null>(null);
+    const [electricianData, setElectricianData] = useState<Electrician | null>(null);
     const [services, setServices] = useState<ServiceRequest[]>([]);
     const [availableRequests, setAvailableRequests] = useState<any[]>([]); // Broadcast requests
     const [loadingData, setLoadingData] = useState(true);
@@ -67,6 +28,15 @@ export default function ElectricianDashboard() {
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // Profile Edit State
+    const [isEditingProfile, setIsEditingProfile] = useState(false);
+    const [profileForm, setProfileForm] = useState({
+        address: '',
+        city: '',
+        pincode: ''
+    });
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
 
     // activeService derived state
     const activeService = services.find(s => s.status === 'ACCEPTED');
@@ -124,7 +94,7 @@ export default function ElectricianDashboard() {
                 const fetchAvailable = async () => {
                     if (data.electrician.city) {
                         try {
-                            const availableRes = await fetch(`/api/electrician/available-requests?city=${encodeURIComponent(data.electrician.city)}`);
+                            const availableRes = await fetch(`/api/electrician/available-requests?city=${encodeURIComponent(data.electrician.city)}&electricianId=${data.electrician.electricianId}`);
                             const availableData = await availableRes.json();
                             if (availableData.success) {
                                 setAvailableRequests(availableData.requests || []);
@@ -171,7 +141,7 @@ export default function ElectricianDashboard() {
                 router.push('/');
             } else if (userProfile && !userProfile.phone && !userProfile.isElectrician && !userProfile.electricianId) {
                 // Authenticated but not an electrician at all
-                console.log('User authenticated but not an electrician, redirecting to registration');
+
                 showToast('Please complete your electrician registration', 'info');
                 router.push('/electrician');
             }
@@ -186,7 +156,7 @@ export default function ElectricianDashboard() {
         if (electricianData?.city && activeTab === 'overview' && isOnline) {
             const pollAvailable = async () => {
                 try {
-                    const availableRes = await fetch(`/api/electrician/available-requests?city=${encodeURIComponent(electricianData.city)}`);
+                    const availableRes = await fetch(`/api/electrician/available-requests?city=${encodeURIComponent(electricianData.city)}&electricianId=${electricianData.electricianId}`);
                     const availableData = await availableRes.json();
                     if (availableData.success) {
                         setAvailableRequests(availableData.requests || []);
@@ -203,6 +173,50 @@ export default function ElectricianDashboard() {
             if (interval) clearInterval(interval);
         };
     }, [electricianData?.city, activeTab, isOnline]);
+
+    // Poll for electrician status updates (e.g., verification from admin dashboard)
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+
+        if (userProfile?.phone || userProfile?.electricianId) {
+            const pollStatus = async () => {
+                try {
+                    const queryParams = new URLSearchParams();
+                    if (userProfile?.phone) {
+                        queryParams.set('phone', userProfile.phone);
+                    }
+                    if (userProfile?.electricianId) {
+                        queryParams.set('electricianId', userProfile.electricianId);
+                    }
+
+                    const response = await fetch(`/api/electrician/profile?${queryParams.toString()}`);
+                    const data = await response.json();
+
+                    if (data.success && data.electrician) {
+                        // Update status if it has changed (e.g., verified by admin)
+                        if (data.electrician.status !== electricianData?.status) {
+                            setElectricianData(data.electrician);
+                            // Show toast notification if status changed
+                            if (data.electrician.status === 'VERIFIED') {
+                                showToast('✅ Your profile has been verified!', 'success');
+                            } else if (data.electrician.status === 'REJECTED') {
+                                showToast('❌ Your profile was rejected. Please contact support.', 'error');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to poll status updates', err);
+                }
+            };
+
+            // Poll every 5 seconds for status updates
+            interval = setInterval(pollStatus, 5000);
+        }
+
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [userProfile?.phone, userProfile?.electricianId, electricianData?.status, showToast]);
 
     // Live Location Sharing - shares electrician GPS when on service-details tab with active service
     useEffect(() => {
@@ -242,6 +256,17 @@ export default function ElectricianDashboard() {
             if (watchId !== null) navigator.geolocation.clearWatch(watchId);
         };
     }, [activeTab, activeService?.requestId, electricianData?.electricianId]);
+
+    // Initialize profile form when data loads
+    useEffect(() => {
+        if (electricianData) {
+            setProfileForm({
+                address: electricianData.area || '', // Mapping area to address for now or use specific field
+                city: electricianData.city || '',
+                pincode: electricianData.pincode || ''
+            });
+        }
+    }, [electricianData]);
 
     if (isLoading || loadingData) {
         return (
@@ -390,7 +415,13 @@ export default function ElectricianDashboard() {
                 body: JSON.stringify({
                     requestId,
                     electricianId: electricianData.electricianId,
-                    action
+                    action,
+                    // Include electrician details when accepting
+                    ...(action === 'accept' && {
+                        electricianName: electricianData.name,
+                        electricianPhone: electricianData.phonePrimary,
+                        electricianCity: electricianData.city
+                    })
                 })
             });
 
@@ -509,8 +540,115 @@ export default function ElectricianDashboard() {
         }
     };
 
+
+
+    const handleProfileUpdate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!electricianData) return;
+
+        setIsSavingProfile(true);
+        try {
+            const response = await fetch('/api/electrician/update-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    electricianId: electricianData.electricianId,
+                    address: profileForm.address,
+                    city: profileForm.city,
+                    pincode: profileForm.pincode
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                showToast('Profile updated successfully', 'success');
+                setIsEditingProfile(false);
+                fetchElectricianData(); // Refresh data
+            } else {
+                showToast(data.error || 'Update failed', 'error');
+            }
+        } catch (error) {
+            console.error('Update profile error:', error);
+            showToast('Failed to update profile', 'error');
+        } finally {
+            setIsSavingProfile(false);
+        }
+    };
+
     return (
         <main className="min-h-screen bg-gradient-to-br from-slate-900 via-emerald-900 to-slate-900">
+            {/* ... Header and other content ... */}
+
+            {/* Edit Profile Modal */}
+            {isEditingProfile && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-gray-900">Edit Profile Details</h3>
+                            <button
+                                onClick={() => setIsEditingProfile(false)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleProfileUpdate} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Address / Area</label>
+                                <Input
+                                    label="Address / Area"
+                                    value={profileForm.address}
+                                    onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                                    placeholder="Enter your local area or full address"
+                                    required
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <Input
+                                        label="City"
+                                        value={profileForm.city}
+                                        onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value })}
+                                        placeholder="City"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <Input
+                                        label="Pincode"
+                                        value={profileForm.pincode}
+                                        onChange={(e) => setProfileForm({ ...profileForm, pincode: e.target.value })}
+                                        placeholder="Pincode"
+                                        required
+                                        maxLength={6}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    fullWidth
+                                    onClick={() => setIsEditingProfile(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    fullWidth
+                                    className="bg-emerald-600 hover:bg-emerald-700"
+                                    disabled={isSavingProfile}
+                                >
+                                    {isSavingProfile ? 'Saving...' : 'Save Changes'}
+                                </Button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Premium Header */}
             <header className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-xl border-b border-emerald-500/20">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -582,9 +720,17 @@ export default function ElectricianDashboard() {
                         </div>
                         <div className="flex flex-col items-start lg:items-end gap-2">
                             {getStatusBadge(electricianData.status)}
-                            <p className="text-emerald-100/60 text-sm">
-                                📍 {electricianData.area}, {electricianData.city}
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-emerald-100/60 text-sm">
+                                    📍 {electricianData.area}, {electricianData.city}
+                                </p>
+                                <button
+                                    onClick={() => setIsEditingProfile(true)}
+                                    className="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-xs text-white transition-colors"
+                                >
+                                    ✎ Edit
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -593,7 +739,7 @@ export default function ElectricianDashboard() {
                 <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
                     {[
                         { id: 'overview', label: 'Overview', icon: '📊' },
-                        { id: 'requests', label: 'Service Requests', icon: '🔧' },
+                        { id: 'requests', label: 'Accepted Service Requests', icon: '🔧' },
                         { id: 'bank', label: 'Bank Details', icon: '🏦' },
                         { id: 'documents', label: 'KYC Documents', icon: '📄' },
                         { id: 'profile', label: 'My Profile', icon: '👤' },
@@ -641,7 +787,7 @@ export default function ElectricianDashboard() {
                                 {availableRequests.length === 0 ? (
                                     <div className="bg-white/10 rounded-xl p-6 text-center backdrop-blur-sm border border-white/10">
                                         <p className="text-white font-medium">No active requests nearby</p>
-                                        <p className="text-blue-200 text-sm mt-1">We'll notify you when someone needs help in {electricianData.city}.</p>
+                                        <p className="text-blue-200 text-sm mt-1">We&apos;ll notify you when someone needs help in {electricianData.city}.</p>
                                     </div>
                                 ) : (
                                     <div className="grid md:grid-cols-2 gap-4">
@@ -649,9 +795,15 @@ export default function ElectricianDashboard() {
                                             <div key={req.requestId} className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20 hover:bg-white/15 transition-all">
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
-                                                        <span className="bg-white text-blue-600 text-xs font-bold px-2 py-1 rounded-full mb-2 inline-block">
-                                                            NEW REQUEST
-                                                        </span>
+                                                        {req.isDirectRequest ? (
+                                                            <span className="bg-white text-emerald-600 text-xs font-bold px-2 py-1 rounded-full mb-2 inline-block animate-pulse">
+                                                                DIRECT REQUEST ⚡
+                                                            </span>
+                                                        ) : (
+                                                            <span className="bg-white text-blue-600 text-xs font-bold px-2 py-1 rounded-full mb-2 inline-block">
+                                                                NEW REQUEST
+                                                            </span>
+                                                        )}
                                                         <h4 className="font-bold text-white text-lg">{req.serviceType}</h4>
                                                     </div>
                                                     <span className="text-xs text-blue-200 font-mono">
@@ -765,7 +917,7 @@ export default function ElectricianDashboard() {
                                         <span className="text-sm font-medium text-emerald-100">Bank Details</span>
                                     </button>
                                     <button
-                                        onClick={() => setActiveTab('profile')}
+                                        onClick={() => setIsEditingProfile(true)}
                                         className="flex flex-col items-center gap-2 p-4 bg-purple-500/10 hover:bg-purple-500/20 rounded-xl transition-all border border-purple-500/20"
                                     >
                                         <span className="text-2xl">⚙️</span>
@@ -862,7 +1014,7 @@ export default function ElectricianDashboard() {
 
                         {/* Request List */}
                         <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10">
-                            <h3 className="text-lg font-bold text-white mb-4">All Service Requests</h3>
+                            <h3 className="text-lg font-bold text-white mb-4">Accepted Service Requests</h3>
                             {services.length === 0 ? (
                                 <div className="text-center py-12">
                                     <span className="text-6xl mb-4 block">📋</span>
@@ -871,7 +1023,7 @@ export default function ElectricianDashboard() {
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {services.filter((s: ServiceRequest) => s.status !== 'CANCELLED' && s.status !== 'DECLINED').map((service) => (
+                                    {services.filter((s: ServiceRequest) => s.status === 'ACCEPTED' || s.status === 'SUCCESS').map((service) => (
                                         <div key={service.requestId} className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-emerald-500/30 transition-all">
                                             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                                                 <div className="flex-1">
@@ -893,23 +1045,39 @@ export default function ElectricianDashboard() {
                                                         Request ID: {service.requestId} • {new Date(service.timestamp).toLocaleString()}
                                                     </p>
 
-                                                    {/* Customer Contact - Moved to Service Details Tab */}
-                                                    {(service.status === 'ACCEPTED' || service.status === 'SUCCESS') && activeTab !== 'requests' && (
-                                                        <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                                            {/* This block is intentionally kept empty or minimal in Requests tab if we want to hide it, 
-                                                                but for now we are removing it from 'Requests' tab view as per plan. 
-                                                                However, keeping it for 'SUCCESS' (History) might be useful? 
-                                                                The plan says "Remove inline customer details from the 'Requests' tab".
-                                                                Let's only show it if status is SUCCESS (History) in the requests tab.
-                                                            */}
+                                                    {/* Customer Contact - Visible for Accepted/Success */}
+                                                    {(service.status === 'ACCEPTED' || service.status === 'SUCCESS') && (
+                                                        <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg space-y-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-emerald-300">👤</span>
+                                                                <span className="text-white font-medium">{service.customerName}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-emerald-300">📞</span>
+                                                                <a href={`tel:${service.customerPhone}`} className="text-emerald-200 hover:text-emerald-100 hover:underline font-mono">
+                                                                    {service.customerPhone}
+                                                                </a>
+                                                            </div>
+                                                            <div className="flex items-start gap-2">
+                                                                <span className="text-emerald-300 mt-1">📍</span>
+                                                                <div className="flex-1">
+                                                                    <p className="text-gray-300 text-sm">{service.customerAddress}</p>
+                                                                    {service.customerCity && <p className="text-gray-400 text-xs">{service.customerCity}</p>}
+                                                                </div>
+                                                            </div>
+                                                            {service.customerAddress && (
+                                                                <a
+                                                                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(service.customerAddress + ' ' + (service.customerCity || ''))}`}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1 text-xs text-blue-300 hover:text-blue-200 mt-1"
+                                                                >
+                                                                    <span>🗺️</span> Open in Maps
+                                                                </a>
+                                                            )}
                                                         </div>
                                                     )}
-                                                    {service.status === 'SUCCESS' && (
-                                                        <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                                            <p className="text-xs text-emerald-300/70 mb-1">Customer</p>
-                                                            <p className="text-white font-medium">👤 {service.customerName}</p>
-                                                        </div>
-                                                    )}
+
                                                 </div>
                                                 {service.status === 'NEW' && (
                                                     <div className="flex gap-2">

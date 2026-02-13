@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button, Card, Input, useToast } from '@/components/ui';
 import { cn, ELECTRICIAN_STATUS, REQUEST_STATUS } from '@/lib/utils';
 
-type Tab = 'kyc' | 'verified' | 'bank' | 'requests' | 'ongoing' | 'analytics' | 'referrals';
+type Tab = 'kyc' | 'verified' | 'bank' | 'requests' | 'ongoing' | 'accept-request' | 'analytics' | 'referrals';
 
 interface Electrician {
     id: string;
@@ -72,6 +72,59 @@ export default function AdminPanel() {
 
     const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
 
+    // Edit Request State
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingRequest, setEditingRequest] = useState<ServiceRequest | null>(null);
+    const [editForm, setEditForm] = useState({
+        serviceType: '',
+        urgency: '',
+        preferredDate: '',
+        preferredSlot: '',
+        description: '',
+        status: '',
+        electricianId: ''
+    });
+
+    const openEditModal = (request: ServiceRequest) => {
+        setEditingRequest(request);
+        setEditForm({
+            serviceType: request.serviceType,
+            urgency: request.urgency,
+            preferredDate: request.preferredDate || '',
+            preferredSlot: request.preferredSlot || '',
+            description: request.description || '',
+            status: request.status,
+            electricianId: request.electricianId || ''
+        });
+        setEditModalOpen(true);
+    };
+
+    const handleUpdateSubmit = async () => {
+        if (!editingRequest) return;
+
+        try {
+            const response = await fetch('/api/admin/update-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    requestId: editingRequest.id,
+                    ...editForm
+                }),
+            });
+            const data = await response.json();
+            if (data.success) {
+                fetchRequests();
+                setEditModalOpen(false);
+                showToast('Request updated successfully', 'success');
+            } else {
+                showToast(data.error || 'Update failed', 'error');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showToast('Update failed', 'error');
+        }
+    };
+
     // Simple password check (in production, use proper auth)
     const handleLogin = () => {
         if (password === 'admin123') {
@@ -87,7 +140,7 @@ export default function AdminPanel() {
         if (isAuthenticated) {
             if (activeTab === 'kyc' || activeTab === 'verified' || activeTab === 'bank') {
                 fetchElectricians();
-            } else if (activeTab === 'requests' || activeTab === 'ongoing') {
+            } else if (activeTab === 'requests' || activeTab === 'ongoing' || activeTab === 'accept-request') {
                 fetchRequests();
             }
         }
@@ -401,6 +454,7 @@ export default function AdminPanel() {
                         { id: 'kyc' as Tab, label: 'Pending KYC', icon: '📋', count: pendingCount },
                         { id: 'bank' as Tab, label: 'Bank Verification', icon: '🏦', count: electricians.filter(e => e.bankDetails?.status === 'PENDING').length },
                         { id: 'verified' as Tab, label: 'Verified', icon: '✅', count: verifiedCount },
+                        { id: 'accept-request' as Tab, label: 'Accept Request', icon: '📞', count: requests.filter(r => r.status === 'NEW').length },
                         { id: 'ongoing' as Tab, label: 'Ongoing Requests', icon: '⚡', count: requests.filter(r => ['NEW', 'ACCEPTED'].includes(r.status)).length },
                         { id: 'requests' as Tab, label: 'All Requests', icon: '🔧', count: totalRequests },
                         { id: 'referrals' as Tab, label: 'Referrals', icon: '🎁' },
@@ -723,6 +777,191 @@ export default function AdminPanel() {
                     </div>
                 )}
 
+                {/* Accept Request Tab */}
+                {activeTab === 'accept-request' && (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-gray-900">Accept Service Requests</h2>
+                            <Button variant="outline" size="sm" onClick={fetchRequests}>
+                                🔄 Refresh
+                            </Button>
+                        </div>
+
+                        {loading ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                <p className="text-gray-500">Loading...</p>
+                            </div>
+                        ) : requests.filter(r => r.status === 'NEW').length === 0 ? (
+                            <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+                                <span className="text-6xl mb-4 block">✨</span>
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">All Caught Up!</h3>
+                                <p className="text-gray-500">No new service requests to accept.</p>
+                            </div>
+                        ) : (
+                            <div className="grid gap-4">
+                                {requests.filter(r => r.status === 'NEW').map((req) => (
+                                    <div key={req.id} className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                                        <div className="grid md:grid-cols-3 gap-6 mb-6">
+                                            {/* Customer Details */}
+                                            <div className="border-r border-gray-200 pr-4">
+                                                <h3 className="font-bold text-gray-900 mb-4">👤 Customer Details</h3>
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Name</p>
+                                                        <input
+                                                            type="text"
+                                                            value={editingRequest?.id === req.id ? editForm.description : req.customerName || ''}
+                                                            onChange={(e) => {
+                                                                if (editingRequest?.id === req.id) {
+                                                                    setEditForm({ ...editForm, description: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Phone</p>
+                                                        <p className="font-semibold text-gray-900">{req.customerPhone}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Address</p>
+                                                        <p className="text-sm text-gray-700">{req.customerAddress || 'Not provided'}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">City</p>
+                                                        <p className="font-semibold text-gray-900">{req.customerCity || 'N/A'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Service Details */}
+                                            <div className="border-r border-gray-200 pr-4">
+                                                <h3 className="font-bold text-gray-900 mb-4">🔧 Service Details</h3>
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Request ID</p>
+                                                        <p className="font-mono text-sm text-gray-900">{req.id}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Service Type</p>
+                                                        <input
+                                                            type="text"
+                                                            value={editingRequest?.id === req.id ? editForm.serviceType : req.serviceType}
+                                                            onChange={(e) => {
+                                                                if (editingRequest?.id === req.id) {
+                                                                    setEditForm({ ...editForm, serviceType: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Urgency</p>
+                                                        <input
+                                                            type="text"
+                                                            value={editingRequest?.id === req.id ? editForm.urgency : req.urgency}
+                                                            onChange={(e) => {
+                                                                if (editingRequest?.id === req.id) {
+                                                                    setEditForm({ ...editForm, urgency: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs text-gray-500">Requested Date & Time</p>
+                                                        <p className="text-sm text-gray-700">{req.preferredDate} • {req.preferredSlot}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Assignment */}
+                                            <div>
+                                                <h3 className="font-bold text-gray-900 mb-4">📍 Assign Electrician</h3>
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <label className="text-xs text-gray-500 block mb-2">Select Electrician</label>
+                                                        <select
+                                                            defaultValue=""
+                                                            onChange={(e) => {
+                                                                if (e.target.value) {
+                                                                    setEditForm({ ...editForm, electricianId: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900"
+                                                        >
+                                                            <option value="">-- Choose Electrician --</option>
+                                                            {electricians.filter(e => e.status === 'VERIFIED').map(e => (
+                                                                <option key={e.id} value={e.id}>
+                                                                    {e.name} ({e.city})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500 block mb-2">Preferred Date</label>
+                                                        <input
+                                                            type="text"
+                                                            value={editingRequest?.id === req.id ? editForm.preferredDate : req.preferredDate}
+                                                            onChange={(e) => {
+                                                                if (editingRequest?.id === req.id) {
+                                                                    setEditForm({ ...editForm, preferredDate: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-gray-500 block mb-2">Time Slot</label>
+                                                        <input
+                                                            type="text"
+                                                            value={editingRequest?.id === req.id ? editForm.preferredSlot : req.preferredSlot}
+                                                            onChange={(e) => {
+                                                                if (editingRequest?.id === req.id) {
+                                                                    setEditForm({ ...editForm, preferredSlot: e.target.value });
+                                                                }
+                                                            }}
+                                                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Description */}
+                                        {req.description && (
+                                            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                                                <p className="text-xs text-gray-500 mb-1">Description</p>
+                                                <p className="text-sm text-gray-700">{req.description}</p>
+                                            </div>
+                                        )}
+
+                                        {/* Action Buttons */}
+                                        <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => updateRequestStatus(req.id, 'CANCELLED')}
+                                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                            >
+                                                ✗ Reject
+                                            </Button>
+                                            {editForm.electricianId && (
+                                                <Button
+                                                    className="bg-green-600 hover:bg-green-700"
+                                                    onClick={() => updateRequestStatus(req.id, 'ACCEPTED', editForm.electricianId)}
+                                                >
+                                                    ✓ Accept & Assign
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Ongoing Requests Tab */}
                 {activeTab === 'ongoing' && (
                     <div className="space-y-6">
@@ -818,6 +1057,14 @@ export default function AdminPanel() {
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
+                                                    onClick={() => openEditModal(req)}
+                                                    className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                                                >
+                                                    ✏️ Edit
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
                                                     onClick={() => setSelectedRequest(req)}
                                                     className="text-blue-600 border-blue-200 hover:bg-blue-50"
                                                 >
@@ -876,6 +1123,14 @@ export default function AdminPanel() {
                                                 <p className="text-xs text-gray-400">{req.id}</p>
                                             </div>
                                             <div className="flex flex-col gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => openEditModal(req)}
+                                                    className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
+                                                >
+                                                    ✏️ Edit
+                                                </Button>
                                                 <select
                                                     className="px-3 py-1 border rounded text-sm"
                                                     onChange={(e) => {
@@ -947,11 +1202,21 @@ export default function AdminPanel() {
                                                 <p className="text-xs text-gray-400 mt-1">
                                                     Customer: <span className="font-semibold text-gray-700">{req.customerName || req.customerId}</span>
                                                     <span className="mx-2">→</span>
-                                                    Electrician: <span className="font-semibold text-gray-700">{req.electricianName || req.electricianId}</span>
+                                                    Electrician: <span className="font-semibold text-gray-700">
+                                                        {req.electricianName || electricians.find(e => e.id === req.electricianId)?.name || req.electricianId}
+                                                    </span>
                                                 </p>
                                             </div>
 
                                             <div className="flex items-center gap-3">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => openEditModal(req)}
+                                                    className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                                                >
+                                                    ✏️ Edit
+                                                </Button>
                                                 <select
                                                     value={req.status}
                                                     onChange={(e) => updateRequestStatus(req.id, e.target.value)}

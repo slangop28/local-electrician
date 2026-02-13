@@ -6,36 +6,52 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const phone = searchParams.get('phone');
+        const email = searchParams.get('email'); // Allow lookup by email
 
-        if (!phone) {
-            return NextResponse.json(
-                { success: false, error: 'Phone number is required' },
-                { status: 400 }
-            );
+        if (!phone && !email) {
+            return NextResponse.json({
+                success: false,
+                error: 'Phone number or email is required'
+            }, { status: 400 });
         }
 
-        // ===== 1. Find customer in Supabase =====
-        const { data: customer } = await supabaseAdmin
-            .from('customers')
-            .select('customer_id')
-            .eq('phone', phone)
-            .single();
+        let customerId;
 
-        let customerId = customer?.customer_id;
+        if (phone) {
+            // 1. Try finding customer by phone
+            const { data: exactMatch } = await supabaseAdmin
+                .from('customers')
+                .select('customer_id')
+                .eq('phone', phone)
+                .maybeSingle();
 
-        // Fallback: find customer in Google Sheets
-        if (!customerId) {
-            try {
-                const customerRows = await getRows(SHEET_TABS.CUSTOMERS);
-                const custHeaders = customerRows[0] || [];
-                for (let i = 1; i < customerRows.length; i++) {
-                    if (customerRows[i][custHeaders.indexOf('Phone')] === phone) {
-                        customerId = customerRows[i][custHeaders.indexOf('CustomerID')];
-                        break;
-                    }
+            if (exactMatch) {
+                customerId = exactMatch.customer_id;
+            } else {
+                // Fuzzy match (+91 handling)
+                let altPhone = phone;
+                if (phone.startsWith('+91')) altPhone = phone.slice(3);
+                else if (phone.length === 10) altPhone = '+91' + phone;
+
+                if (altPhone !== phone) {
+                    const { data: fuzzyMatch } = await supabaseAdmin
+                        .from('customers')
+                        .select('customer_id')
+                        .eq('phone', altPhone)
+                        .maybeSingle();
+                    if (fuzzyMatch) customerId = fuzzyMatch.customer_id;
                 }
-            } catch (e) {
-                console.error('[History] Google Sheets customer lookup error:', e);
+            }
+        } else if (email) {
+            // 2. Try finding customer by email
+            const { data: emailMatch } = await supabaseAdmin
+                .from('customers')
+                .select('customer_id')
+                .eq('email', email)
+                .maybeSingle();
+
+            if (emailMatch) {
+                customerId = emailMatch.customer_id;
             }
         }
 
@@ -60,20 +76,50 @@ export async function GET(request: NextRequest) {
                 .map(r => r.electrician_id)
                 .filter(id => id && id !== 'BROADCAST'))];
 
-            let electricianMap: Record<string, { name: string; phone: string }> = {};
+            let electricianMap: Record<string, { name: string; phone: string; location?: string }> = {};
 
             if (electricianIds.length > 0) {
                 const { data: electricians } = await supabaseAdmin
                     .from('electricians')
-                    .select('electrician_id, name, phone_primary')
+                    .select('electrician_id, name, phone_primary, city, area')
                     .in('electrician_id', electricianIds);
 
                 if (electricians) {
                     for (const e of electricians) {
                         electricianMap[e.electrician_id] = {
                             name: e.name,
-                            phone: e.phone_primary
+                            phone: e.phone_primary,
+                            location: e.area ? `${e.area}, ${e.city}` : e.city
                         };
+                    }
+                }
+
+                // Check for missing electricians and fallback to Google Sheets
+                const foundIds = Object.keys(electricianMap);
+                const missingIds = electricianIds.filter(id => !foundIds.includes(id));
+
+                if (missingIds.length > 0) {
+                    try {
+                        const elecRows = await getRows(SHEET_TABS.ELECTRICIANS);
+                        const headers = elecRows[0] || [];
+                        const idIndex = headers.indexOf('ElectricianID');
+
+                        if (idIndex !== -1) {
+                            for (let i = 1; i < elecRows.length; i++) {
+                                const row = elecRows[i];
+                                const currentId = row[idIndex];
+
+                                if (missingIds.includes(currentId)) {
+                                    electricianMap[currentId] = {
+                                        name: row[headers.indexOf('NameAsPerAadhaar')] || 'Electrician',
+                                        phone: row[headers.indexOf('PhonePrimary')] || '',
+                                        location: `${row[headers.indexOf('Area')]}, ${row[headers.indexOf('City')]}`
+                                    };
+                                }
+                            }
+                        }
+                    } catch (sheetError) {
+                        console.error('Failed to fallback to Sheets for electricians:', sheetError);
                     }
                 }
             }
@@ -82,8 +128,9 @@ export async function GET(request: NextRequest) {
                 requestId: r.request_id,
                 customerId: r.customer_id,
                 electricianId: r.electrician_id,
-                electricianName: electricianMap[r.electrician_id]?.name || 'Searching...',
-                electricianPhone: electricianMap[r.electrician_id]?.phone || '',
+                electricianName: r.electrician_name || electricianMap[r.electrician_id]?.name,
+                electricianPhone: r.electrician_phone || electricianMap[r.electrician_id]?.phone,
+                electricianLocation: r.electrician_city || electricianMap[r.electrician_id]?.location,
                 serviceType: r.service_type,
                 description: r.description || '',
                 preferredDate: r.preferred_date || '',
@@ -137,7 +184,7 @@ export async function GET(request: NextRequest) {
                         requestId: row[headers.indexOf('RequestID')],
                         customerId: customerId,
                         electricianId: electricianId || '',
-                        electricianName,
+                        electricianName: electricianName !== 'Searching...' ? electricianName : undefined,
                         electricianPhone,
                         serviceType: row[headers.indexOf('ServiceType')] || '',
                         description: row[headers.indexOf('Description')] || row[headers.indexOf('IssueDetail')] || '',
@@ -146,7 +193,7 @@ export async function GET(request: NextRequest) {
                         status: row[headers.indexOf('Status')] || 'NEW',
                         createdAt: row[headers.indexOf('Timestamp')] || '',
                         customerName: '',
-                        customerPhone: phone,
+                        customerPhone: phone || '', // Best guess
                         customerAddress: '',
                         customerCity: ''
                     });

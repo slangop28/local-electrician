@@ -56,6 +56,23 @@ export async function GET(request: NextRequest) {
                     .eq('electrician_id', electricianId)
                     .order('created_at', { ascending: false });
 
+                // Fetch customer details for these requests to ensure we have names/phones
+                const customerIds = Array.from(new Set((serviceRequests || []).map((r: any) => r.customer_id).filter(Boolean)));
+                let customerMap: Record<string, any> = {};
+
+                if (customerIds.length > 0) {
+                    const { data: customers } = await supabaseAdmin
+                        .from('customers')
+                        .select('customer_id, name, phone, address, city, pincode')
+                        .in('customer_id', customerIds);
+
+                    if (customers) {
+                        customers.forEach((c: any) => {
+                            customerMap[c.customer_id] = c;
+                        });
+                    }
+                }
+
                 let completedCount = 0;
                 let totalRating = 0;
                 let ratingCount = 0;
@@ -77,20 +94,23 @@ export async function GET(request: NextRequest) {
                         }
                         return true;
                     })
-                    .map((req: any) => ({
-                        requestId: req.request_id,
-                        customerName: req.customer_name || 'Unknown',
-                        customerPhone: req.customer_phone || '',
-                        customerAddress: req.customer_address || '',
-                        customerCity: req.customer_city || '',
-                        serviceType: req.service_type,
-                        status: req.status,
-                        preferredDate: req.preferred_date,
-                        preferredSlot: req.preferred_slot,
-                        timestamp: req.created_at,
-                        description: req.description,
-                        rating: req.rating
-                    }));
+                    .map((req: any) => {
+                        const cust = customerMap[req.customer_id] || {};
+                        return {
+                            requestId: req.request_id,
+                            customerName: req.customer_name || cust.name || 'Unknown',
+                            customerPhone: req.customer_phone || cust.phone || '',
+                            customerAddress: req.customer_address || cust.address || '',
+                            customerCity: req.customer_city || cust.city || '',
+                            serviceType: req.service_type,
+                            status: req.status,
+                            preferredDate: req.preferred_date,
+                            preferredSlot: req.preferred_slot,
+                            timestamp: req.created_at,
+                            description: req.description,
+                            rating: req.rating
+                        };
+                    });
 
                 // Get bank details
                 let bankDetails = undefined;

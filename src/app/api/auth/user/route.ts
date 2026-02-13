@@ -34,23 +34,40 @@ export async function POST(request: NextRequest) {
                 .from('users')
                 .select('*')
                 .eq('phone', phone)
-                .eq('user_type', userType || 'customer')
-                .single();
-            if (data) supaUser = data;
+                .maybeSingle();
+
+            if (data) {
+                supaUser = data;
+            } else {
+                // Try alternate format (+91 vs raw)
+                let altPhone = phone;
+                if (phone.startsWith('+91')) altPhone = phone.slice(3);
+                else if (phone.length === 10) altPhone = '+91' + phone;
+
+                if (altPhone !== phone) {
+                    const { data: match2 } = await supabaseAdmin
+                        .from('users')
+                        .select('*')
+                        .eq('phone', altPhone)
+                        .maybeSingle();
+                    if (match2) supaUser = match2;
+                }
+            }
         }
 
         if (!supaUser && email) {
             const { data } = await supabaseAdmin
                 .from('users')
                 .select('*')
+                .select('*')
                 .eq('email', email)
-                .eq('user_type', userType || 'customer')
                 .single();
             if (data) supaUser = data;
         }
 
         // ===== 2. If found in Supabase =====
         if (supaUser) {
+            // Update last_login
             // Update last_login
             await supabaseAdmin
                 .from('users')
@@ -100,12 +117,12 @@ export async function POST(request: NextRequest) {
             const row = rows[i];
             const rowUserType = row[userTypeIndex];
 
-            if (phone && row[phoneIndex] === phone && rowUserType === userType) {
+            if (phone && row[phoneIndex] === phone) {
                 existingUser = row;
                 existingUserIndex = i;
                 break;
             }
-            if (email && row[emailIndex] === email && rowUserType === userType) {
+            if (email && row[emailIndex] === email) {
                 existingUser = row;
                 existingUserIndex = i;
                 break;
@@ -140,6 +157,42 @@ export async function POST(request: NextRequest) {
                     username: username,
                     last_login: new Date().toISOString()
                 }, { onConflict: 'user_id' });
+
+                // NEW: If user is an electrician, check Verified status from Electricians Sheet
+                if (storedUserType === 'electrician') {
+                    // Get electrician details from Sheets to populate verified table
+                    const elecRows = await getRows(SHEET_TABS.ELECTRICIANS);
+                    const eHeaders = elecRows[0];
+                    const ePhoneIdx = eHeaders.indexOf('PhonePrimary');
+                    const eStatusIdx = eHeaders.indexOf('Status');
+
+                    let elecRow = null;
+                    if (ePhoneIdx !== -1) {
+                        for (let k = 1; k < elecRows.length; k++) {
+                            if (elecRows[k][ePhoneIdx] === (existingPhone || phone)) {
+                                elecRow = elecRows[k];
+                                break;
+                            }
+                        }
+                    }
+
+                    if (elecRow) {
+                        const status = elecRow[eStatusIdx] || 'PENDING';
+
+                        if (status === 'VERIFIED') {
+                            await supabaseAdmin.from('verified_electricians').upsert({
+                                electrician_id: elecRow[eHeaders.indexOf('ElectricianID')],
+                                name: elecRow[eHeaders.indexOf('NameAsPerAadhaar')],
+                                phone: elecRow[eHeaders.indexOf('PhonePrimary')],
+                                city: elecRow[eHeaders.indexOf('City')],
+                                area: elecRow[eHeaders.indexOf('Area')],
+                                status: 'VERIFIED',
+                                updated_at: new Date().toISOString()
+                            }, { onConflict: 'electrician_id' });
+                        }
+                    }
+                }
+
             } catch (syncErr) {
                 console.error('[Auth API] Supabase sync error:', syncErr);
             }

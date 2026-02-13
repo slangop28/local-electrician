@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
 
         if (supaUser && !error) {
             // User found in Supabase - update last_login
+            // Supabase types check
             await supabaseAdmin
                 .from('users')
                 .update({ last_login: new Date().toISOString() })
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
                         .from('electricians')
                         .select('electrician_id, status, phone_primary')
                         .eq('phone_primary', lookupPhone)
-                        .single();
+                        .maybeSingle();
                     if (elec) {
                         electricianData = {
                             electricianId: elec.electrician_id,
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
                         .from('electricians')
                         .select('electrician_id, status, phone_primary')
                         .eq('email', lookupEmail)
-                        .single();
+                        .maybeSingle();
                     if (elec) {
                         electricianData = {
                             electricianId: elec.electrician_id,
@@ -65,17 +66,35 @@ export async function POST(request: NextRequest) {
                 }
             }
 
+            // If customer with missing phone, try to find in customers table
+            let customerData = null;
+            if (supaUser.user_type === 'customer' || userType === 'customer') {
+                const lookupEmail = email || supaUser.email;
+                if (lookupEmail) {
+                    const { data: cust } = await supabaseAdmin
+                        .from('customers')
+                        .select('phone, name, address, city')
+                        .eq('email', lookupEmail)
+                        .maybeSingle();
+                    if (cust) {
+                        customerData = cust;
+                    }
+                }
+            }
+
             return NextResponse.json({
                 success: true,
                 valid: true,
                 user: {
                     id: supaUser.user_id,
-                    phone: supaUser.phone,
+                    phone: supaUser.phone || customerData?.phone || null,
                     email: supaUser.email,
-                    name: supaUser.name,
+                    name: supaUser.name || customerData?.name || null,
                     username: supaUser.username,
                     userType: supaUser.user_type,
                     authProvider: supaUser.auth_provider,
+                    address: customerData?.address || null,
+                    city: customerData?.city || null,
                     isElectrician: !!electricianData,
                     electricianStatus: electricianData?.status || null,
                     electricianId: electricianData?.electricianId || null
@@ -123,9 +142,12 @@ export async function POST(request: NextRequest) {
 
     } catch (error) {
         console.error('Validate session error:', error);
-        return NextResponse.json(
-            { success: false, error: 'Failed to validate session' },
-            { status: 500 }
-        );
+        // Return 200 with valid: false instead of 500 to prevent client-side "network error" handling
+        // which might trigger the fail-safe we added in AuthContext
+        return NextResponse.json({
+            success: true,
+            valid: false,
+            error: 'Session validation failed internal error'
+        });
     }
 }

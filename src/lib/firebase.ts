@@ -9,6 +9,8 @@ import {
     signInWithPopup,
     signOut,
     onAuthStateChanged,
+    setPersistence,
+    browserLocalPersistence,
     User,
     ConfirmationResult
 } from 'firebase/auth';
@@ -25,6 +27,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
+
+// Enforce local persistence (keep user logged in even after browser close)
+setPersistence(auth, browserLocalPersistence)
+    .catch((error) => {
+        console.error("Firebase persistence error:", error);
+    });
 
 // Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
