@@ -277,13 +277,12 @@ export async function POST(request: NextRequest) {
         console.log('[Migration] Data migration completed');
         console.log('[Migration] Results:', result);
 
-        return NextResponse.json({
-            success: result.errors.length === 0,
-            message: result.errors.length === 0 
-                ? 'Data migration completed successfully' 
-                : 'Data migration completed with errors',
-            ...result
-        });
+        result.success = result.errors.length === 0;
+        result.message = result.errors.length === 0
+            ? 'Data migration completed successfully'
+            : 'Data migration completed with errors';
+
+        return NextResponse.json(result);
 
     } catch (error) {
         console.error('[Migration] Fatal error:', error);
