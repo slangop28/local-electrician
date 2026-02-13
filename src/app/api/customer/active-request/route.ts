@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
         const customerIdParam = searchParams.get('customerId');
         const phone = searchParams.get('phone') || customerIdParam; // Map customerId to phone
         const email = searchParams.get('email'); // Allow lookup by email
+        const includeCompleted = searchParams.get('includeCompleted') === 'true';
 
         if (!phone && !email) {
             return NextResponse.json({
@@ -61,12 +62,16 @@ export async function GET(request: NextRequest) {
         }
 
         if (customerId) {
+            const activeStatuses = includeCompleted
+                ? ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS']
+                : ['NEW', 'ACCEPTED', 'IN_PROGRESS'];
+
             // Get latest active request from Supabase
             const { data: requests } = await supabaseAdmin
                 .from('service_requests')
                 .select('*')
                 .eq('customer_id', customerId)
-                .in('status', ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS'])
+                .in('status', activeStatuses)
                 .order('created_at', { ascending: false })
                 .limit(1);
 
@@ -153,7 +158,11 @@ export async function GET(request: NextRequest) {
                 const latestRequest = customerRequests[0];
                 const status = latestRequest[statusIndex] || '';
 
-                if (!['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS'].includes(status)) {
+                const activeStatuses = includeCompleted
+                    ? ['NEW', 'ACCEPTED', 'IN_PROGRESS', 'SUCCESS']
+                    : ['NEW', 'ACCEPTED', 'IN_PROGRESS'];
+
+                if (!activeStatuses.includes(status)) {
                     return NextResponse.json({ success: true, activeRequest: null });
                 }
 

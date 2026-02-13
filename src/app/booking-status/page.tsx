@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
@@ -37,7 +37,7 @@ const STEPS = [
     { key: 'SUCCESS', label: 'Completed', icon: '✅' },
 ];
 
-export default function BookingStatusPage() {
+function BookingStatusContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { userProfile, isAuthenticated, isLoading } = useAuth();
@@ -124,7 +124,7 @@ export default function BookingStatusPage() {
                             targetRequestId = activeData.activeRequest.requestId || activeData.activeRequest.request_id;
                             setActiveRequestId(targetRequestId); // Update state to trigger subscription
                         } else {
-                            setError('No active booking found');
+                            setError('No active service requests at the moment.');
                             setLoading(false);
                             return;
                         }
@@ -149,6 +149,14 @@ export default function BookingStatusPage() {
                 const bookingData = data.request;
 
                 if (bookingData) {
+                    // If job is already completed, it's no longer an "active" request for this status page
+                    if (['SUCCESS', 'COMPLETED', 'PAID'].includes(bookingData.status)) {
+                        setBooking(null);
+                        setError('No active service requests at the moment.');
+                        setLoading(false);
+                        return;
+                    }
+
                     setBooking({
                         requestId: bookingData.request_id || bookingData.requestId,
                         customerName: bookingData.customer_name || bookingData.customerName || userProfile?.name || 'You',
@@ -280,14 +288,24 @@ export default function BookingStatusPage() {
     }
 
     if (error || !booking) {
+        const isFinished = error === 'No active service requests at the moment.';
         return (
             <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-                <div className="text-6xl mb-4">😕</div>
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">Booking Not Found</h1>
-                <p className="text-gray-600 mb-6 text-center max-w-md">{error || "We couldn't find the booking you're looking for."}</p>
-                <Link href="/">
-                    <Button variant="outline">Back to Home</Button>
-                </Link>
+                <div className="text-6xl mb-4">{isFinished ? '✅' : '😕'}</div>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                    {isFinished ? 'All Caught Up!' : 'Booking Not Found'}
+                </h1>
+                <p className="text-gray-600 mb-6 text-center max-w-md">
+                    {error || "We couldn't find the booking you're looking for."}
+                </p>
+                <div className="flex gap-4">
+                    <Link href="/">
+                        <Button variant="outline">Back to Home</Button>
+                    </Link>
+                    <Link href="/profile">
+                        <Button>Service History</Button>
+                    </Link>
+                </div>
             </main>
         );
     }
@@ -491,6 +509,21 @@ export default function BookingStatusPage() {
                 />
             </div>
         </main>
+    );
+}
+
+export default function BookingStatusPage() {
+    return (
+        <Suspense fallback={
+            <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-gray-600 font-medium">Loading...</p>
+                </div>
+            </main>
+        }>
+            <BookingStatusContent />
+        </Suspense>
     );
 }
 

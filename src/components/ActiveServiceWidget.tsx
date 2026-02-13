@@ -93,9 +93,9 @@ export function ActiveServiceWidget({ activeService }: ActiveServiceWidgetProps)
                     </div>
                 )}
 
-                <Link href={`/booking-status?requestId=${activeService.requestId}`}>
+                <Link href={isSuccess ? `/service-request/${activeService.requestId}` : `/booking-status?requestId=${activeService.requestId}`}>
                     <button className="w-full py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors">
-                        View Details & Track
+                        {isSuccess ? 'View Summary' : 'View Details & Track'}
                     </button>
                 </Link>
             </div>

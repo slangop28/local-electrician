@@ -35,6 +35,7 @@ export default function Home() {
         const queryParams = new URLSearchParams();
         if (userProfile?.phone) queryParams.set('phone', userProfile.phone);
         if (userProfile?.email) queryParams.set('email', userProfile.email);
+        queryParams.set('includeCompleted', 'true');
 
         const res = await fetch(`/api/customer/active-request?${queryParams.toString()}`);
         const data = await res.json();

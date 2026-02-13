@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
                 if (lookupEmail) {
                     const { data: cust } = await supabaseAdmin
                         .from('customers')
-                        .select('phone, name, address, city')
+                        .select('phone, name, address, city, pincode')
                         .eq('email', lookupEmail)
                         .maybeSingle();
                     if (cust) {

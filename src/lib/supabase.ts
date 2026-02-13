@@ -13,12 +13,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
   }
 }
 
+// Use placeholders for build-time if variables are missing
+const finalUrl = supabaseUrl || 'https://placeholder-url.supabase.co';
+const finalAnonKey = supabaseAnonKey || 'placeholder-anon-key';
+const finalServiceKey = supabaseServiceKey || finalAnonKey;
+
 // Client for client-side usage (respects RLS)
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const supabase = createClient(finalUrl, finalAnonKey);
 
 // Client for server-side API routes (bypasses RLS) - only available on server
-export const supabaseAdmin = supabaseServiceKey
-  ? createClient(supabaseUrl || '', supabaseServiceKey)
-  : supabase;
+export const supabaseAdmin = createClient(finalUrl, finalServiceKey);
 
 export { supabaseUrl };

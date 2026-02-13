@@ -7,20 +7,21 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const phone = searchParams.get('phone');
+        const email = searchParams.get('email');
 
-        if (!phone) {
+        if (!phone && !email) {
             return NextResponse.json(
-                { success: false, error: 'Phone number is required' },
+                { success: false, error: 'Phone number or email is required' },
                 { status: 400 }
             );
         }
 
         // ===== 1. Try Supabase first =====
-        const { data: supaCustomer } = await supabaseAdmin
-            .from('customers')
-            .select('*')
-            .eq('phone', phone)
-            .single();
+        let query = supabaseAdmin.from('customers').select('*');
+        if (phone) query = query.eq('phone', phone);
+        else if (email) query = query.eq('email', email);
+
+        const { data: supaCustomer } = await query.maybeSingle();
 
         if (supaCustomer) {
             return NextResponse.json({
@@ -43,14 +44,17 @@ export async function GET(request: NextRequest) {
 
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            if (row[headers.indexOf('Phone')] === phone) {
+            const rowPhone = row[headers.indexOf('Phone')];
+            const rowEmail = row[headers.indexOf('Email')];
+
+            if ((phone && rowPhone === phone) || (email && rowEmail === email)) {
                 return NextResponse.json({
                     success: true,
                     customer: {
                         customerId: row[headers.indexOf('CustomerID')],
                         name: row[headers.indexOf('Name')],
-                        phone: row[headers.indexOf('Phone')],
-                        email: row[headers.indexOf('Email')] || '',
+                        phone: rowPhone,
+                        email: rowEmail || '',
                         city: row[headers.indexOf('City')] || '',
                         pincode: row[headers.indexOf('Pincode')] || '',
                         address: row[headers.indexOf('Address')] || '',
@@ -75,9 +79,9 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const { phone, name, email, city, pincode, address } = body;
 
-        if (!phone) {
+        if (!phone && !email) {
             return NextResponse.json(
-                { success: false, error: 'Phone number is required' },
+                { success: false, error: 'Phone number or email is required' },
                 { status: 400 }
             );
         }
@@ -85,11 +89,11 @@ export async function POST(request: NextRequest) {
         let customerId = '';
 
         // ===== 1. Supabase upsert (primary) =====
-        const { data: existingCust } = await supabaseAdmin
-            .from('customers')
-            .select('customer_id')
-            .eq('phone', phone)
-            .single();
+        let query = supabaseAdmin.from('customers').select('customer_id');
+        if (phone) query = query.eq('phone', phone);
+        else if (email) query = query.eq('email', email);
+
+        const { data: existingCust } = await query.maybeSingle();
 
         if (existingCust) {
             customerId = existingCust.customer_id;
@@ -99,6 +103,7 @@ export async function POST(request: NextRequest) {
                 .update({
                     ...(name !== undefined && { name }),
                     ...(email !== undefined && { email }),
+                    ...(phone !== undefined && { phone }),
                     ...(city !== undefined && { city }),
                     ...(pincode !== undefined && { pincode }),
                     ...(address !== undefined && { address }),
@@ -109,7 +114,7 @@ export async function POST(request: NextRequest) {
             await supabaseAdmin.from('customers').insert({
                 customer_id: customerId,
                 name: name || '',
-                phone: phone,
+                phone: phone || '',
                 email: email || '',
                 city: city || '',
                 pincode: pincode || '',
@@ -125,7 +130,10 @@ export async function POST(request: NextRequest) {
             let rowIndex = -1;
 
             for (let i = 1; i < rows.length; i++) {
-                if (rows[i][headers.indexOf('Phone')] === phone) {
+                const rowPhone = rows[i][headers.indexOf('Phone')];
+                const rowEmail = rows[i][headers.indexOf('Email')];
+
+                if ((phone && rowPhone === phone) || (email && rowEmail === email)) {
                     rowIndex = i + 1;
                     break;
                 }
@@ -150,7 +158,7 @@ export async function POST(request: NextRequest) {
                     getTimestamp(),
                     customerId,
                     name || '',
-                    phone,
+                    phone || '',
                     email || '',
                     city || '',
                     pincode || '',
