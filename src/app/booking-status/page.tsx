@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
@@ -36,7 +36,7 @@ const STEPS = [
     { key: 'SUCCESS', label: 'Completed', icon: '✅' },
 ];
 
-export default function BookingStatusPage() {
+function BookingStatusContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { userProfile, isAuthenticated, isLoading } = useAuth();
@@ -422,6 +422,21 @@ export default function BookingStatusPage() {
                 </div>
             </div>
         </main>
+    );
+}
+
+export default function BookingStatusPage() {
+    return (
+        <Suspense fallback={
+            <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-gray-600 font-medium">Loading...</p>
+                </div>
+            </main>
+        }>
+            <BookingStatusContent />
+        </Suspense>
     );
 }
 

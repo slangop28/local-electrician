@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Input } from '@/components/ui';
 import { SERVICE_TYPES, URGENCY_LEVELS, TIME_SLOTS, cn } from '@/lib/utils';
 import { reverseGeocode } from '@/lib/geocoding';
 
-export default function BroadcastRequestPage() {
+function BroadcastRequestContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const targetElectricianId = searchParams.get('electricianId');
@@ -455,5 +455,20 @@ export default function BroadcastRequestPage() {
                 </Card>
             </div>
         </main>
+    );
+}
+
+export default function BroadcastRequestPage() {
+    return (
+        <Suspense fallback={
+            <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-gray-600 font-medium">Loading...</p>
+                </div>
+            </main>
+        }>
+            <BroadcastRequestContent />
+        </Suspense>
     );
 }
