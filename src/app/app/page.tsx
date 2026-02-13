@@ -361,8 +361,7 @@ export default function CustomerDashboard() {
 
                             <div className="flex-1 flex gap-2">
                                 <Input
-                                    label="Search Address"
-                                    placeholder="Enter area or landmark..."
+                                    label="Enter area or landmark..."
                                     value={address}
                                     onChange={(e) => setAddress(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddressSearch()}
